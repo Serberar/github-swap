@@ -5,6 +5,7 @@ const path = require('path');
 const ssh = require('./lib/ssh');
 const git = require('./lib/git');
 const github = require('./lib/github');
+const tools = require('./lib/tools');
 const { Store } = require('./lib/store');
 
 let win;
@@ -88,13 +89,17 @@ function localCopy(meta, name, fullName) {
 const handlers = {
   async listAccounts() {
     const accounts = ssh.parseHosts().map(accountView);
-    const gh = await github.hasGh();
+    const t = await tools.status();
     await Promise.all(
       accounts.map(async (a) => {
-        a.apiAccess = gh && !!a.githubUser && !!(await github.token(a.githubUser));
+        a.apiAccess = t.gh && !!a.githubUser && !!(await github.token(a.githubUser));
       })
     );
-    return { accounts, hasGh: gh, global: await git.getGlobalIdentity() };
+    return { accounts, hasGh: t.gh, hasGit: t.git, global: t.git ? await git.getGlobalIdentity() : {} };
+  },
+
+  async installGit() {
+    await tools.installGit();
   },
 
   async grantAccess(alias) {
