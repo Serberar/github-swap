@@ -71,6 +71,13 @@ async function loadAccounts() {
   renderAccounts();
 }
 
+// Rutas más cortas para leer: «C:\Users\X\Desktop\…» → «Escritorio\…».
+function shortPath(p) {
+  return String(p || '')
+    .replace(/^[A-Z]:\\Users\\[^\\]+\\(Desktop|Escritorio)(?=\\|$)/i, 'Escritorio')
+    .replace(/^[A-Z]:\\Users\\[^\\]+(?=\\|$)/i, 'Mi carpeta de usuario');
+}
+
 function avatar(a) {
   return a.githubUser
     ? `<img class="avatar" src="https://github.com/${esc(a.githubUser)}.png?size=96" alt="">`
@@ -87,49 +94,68 @@ function renderAccounts() {
     .map((a) => {
       const isDefault = a.email && a.email === globalIdentity.email;
       const status = a.githubUser
-        ? `<span class="badge ok">✓ Conectada como @${esc(a.githubUser)}</span>`
-        : a.hasKey
-          ? `<span class="badge warn">Sin comprobar</span>`
-          : `<span class="badge warn">Falta la llave</span>`;
-      const folders = a.folders.length
-        ? `<ul class="folders">${a.folders
-            .map((f) => `<li><span>📁 ${esc(f)}</span><button class="link" data-act="rm-folder" data-folder="${esc(f)}" title="Quitar">✕</button></li>`)
-            .join('')}</ul>`
-        : `<p class="muted">Ninguna carpeta asignada todavía.</p>`;
+        ? `<span class="ok-text">✓ Conectada como @${esc(a.githubUser)}</span>`
+        : checking && a.hasKey
+          ? `<span class="muted">Comprobando conexión…</span>`
+          : `<span class="warn-text">⚠️ ${a.hasKey ? 'No conecta con GitHub' : 'Falta la llave'}</span>`;
+      const folder = a.folders.length
+        ? a.folders.map((f) => `<div class="path" title="${esc(f)}">${esc(shortPath(f))}</div>`).join('')
+        : `<div class="muted">Aún no hay ninguna. Te la pediremos la primera vez que descargues un proyecto.</div>`;
+      const keyName = a.keyFile ? a.keyFile.split(/[\\/]/).pop() : null;
+      const main = !a.githubUser
+        ? checking && a.hasKey
+          ? ''
+          : `<button class="primary" data-act="finish">Terminar configuración</button>`
+        : hasGh
+          ? `<button class="primary" data-act="${a.apiAccess ? 'projects' : 'grant'}">📂 Ver mis proyectos</button>`
+          : `<span class="muted">Instala GitHub CLI (cli.github.com) para ver y crear proyectos desde aquí.</span>`;
       return `
-      <article class="card" data-alias="${esc(a.alias)}">
+      <article class="card account" data-alias="${esc(a.alias)}">
         <div class="card-head">
           ${avatar(a)}
-          <div>
-            <h3>${esc(a.label)} ${isDefault ? '<span class="badge neutral">Por defecto</span>' : ''}</h3>
+          <div class="grow">
+            <h3>${esc(a.label)}
+              <button class="icon" data-act="edit" title="Editar nombre y email" aria-label="Editar">✏️</button>
+              ${isDefault ? '<span class="badge neutral" title="Se usa en los proyectos que no están en la carpeta de ninguna cuenta">Por defecto</span>' : ''}
+            </h3>
+            <div>${status}</div>
             <div class="muted">${esc(a.name || 'Sin nombre')} · ${esc(a.email || 'sin email')}</div>
           </div>
         </div>
-        <p class="status">${status}</p>
-        ${
-          !a.githubUser
-            ? `<p><button class="primary" data-act="finish">Terminar configuración</button></p>`
-            : hasGh
-              ? `<p><button class="primary" data-act="${a.apiAccess ? 'projects' : 'grant'}">📂 Ver mis proyectos</button></p>`
-              : `<p class="muted">Instala GitHub CLI (cli.github.com) para ver y crear proyectos desde aquí.</p>`
-        }
-        <div class="muted">Carpetas que usan esta cuenta automáticamente:</div>
-        ${folders}
-        <div class="actions">
-          <button data-act="add-folder">+ Carpeta</button>
-          <button data-act="test">Comprobar</button>
-          <button data-act="edit">Editar</button>
-          ${isDefault ? '' : `<button data-act="default">Usar por defecto</button>`}
-          ${a.managed ? `<button class="danger" data-act="remove">Quitar</button>` : ''}
+        <div class="acc-row">
+          <div class="grow">
+            <div class="label">📁 Sus proyectos se guardan en</div>
+            ${folder}
+            ${a.folders.length ? '<div class="muted small">Todo lo que haya en esta carpeta usa esta cuenta automáticamente.</div>' : ''}
+          </div>
+          <button class="link" data-act="set-folder">${a.folders.length ? 'Cambiar' : 'Elegir'}</button>
         </div>
-        <details>
-          <summary>Detalles técnicos</summary>
-          Host SSH: <code>${esc(a.alias)}</code><br>
-          Llave: <code>${esc(a.keyFile || '—')}</code>
-        </details>
+        <div class="acc-row">
+          <div class="grow">
+            <div class="label">🔑 Llave SSH</div>
+            <div class="path">${keyName ? esc(keyName) : '—'}</div>
+          </div>
+          ${a.hasKey ? '<button class="link" data-act="copy-key">Copiar llave pública</button>' : ''}
+        </div>
+        <div class="acc-foot">
+          ${main}
+          <span class="grow"></span>
+          ${isDefault ? '' : `<button class="link" data-act="default" title="Se usará en los proyectos que no estén en la carpeta de ninguna cuenta">Usar por defecto</button>`}
+          ${a.managed ? `<button class="link danger" data-act="remove">Quitar</button>` : ''}
+        </div>
       </article>`;
     })
     .join('');
+}
+
+// Comprueba en segundo plano que cada llave sigue funcionando (sin botón «Comprobar»).
+let checking = false;
+async function checkConnections() {
+  checking = true;
+  renderAccounts();
+  await Promise.all(accounts.filter((a) => a.hasKey).map((a) => call('testAccount', a.alias).catch(() => null)));
+  checking = false;
+  await loadAccounts();
 }
 
 $('#account-list').addEventListener('click', async (e) => {
@@ -146,24 +172,24 @@ $('#account-list').addEventListener('click', async (e) => {
       return grantAccess(acc);
     case 'edit':
       return editAccount(acc);
-    case 'test':
+    case 'set-folder':
+      if (
+        acc.folders.length &&
+        !confirm(
+          'Elige la nueva carpeta para esta cuenta.\n\nNo se mueve ni se borra nada: los proyectos que ya estén en la carpeta antigua seguirán ahí, pero dejarán de usar esta cuenta automáticamente.'
+        )
+      )
+        return;
       return busy(btn, async () => {
-        const r = await call('testAccount', alias);
-        toast(r.ok ? `Funciona: conectada como @${r.user}` : 'No conecta. Revisa que la llave esté añadida en GitHub.', !r.ok);
-        await loadAccounts();
-      });
-    case 'add-folder':
-      return busy(btn, async () => {
-        const f = await call('addFolder', alias);
-        if (f) {
-          toast('Listo: los proyectos de esa carpeta usarán esta cuenta');
+        if (await call('setFolder', alias)) {
+          toast('Carpeta cambiada');
           await loadAccounts();
         }
       });
-    case 'rm-folder':
+    case 'copy-key':
       return busy(btn, async () => {
-        await call('removeFolder', alias, btn.dataset.folder);
-        await loadAccounts();
+        await call('copyPublicKey', alias);
+        toast('Llave pública copiada');
       });
     case 'default':
       return busy(btn, async () => {
@@ -754,7 +780,7 @@ function renderRepoPage() {
       <div class="col">
         ${
           r.localPath
-            ? `<section class="card"><h3>En tu ordenador</h3><div class="muted path local-path">📁 ${esc(r.localPath)}</div>
+            ? `<section class="card"><h3>En tu ordenador</h3><div class="muted path local-path" title="${esc(r.localPath)}">📁 ${esc(shortPath(r.localPath))}</div>
                <div id="local-box"><p class="muted">Comprobando…</p></div></section>`
             : ''
         }
@@ -1109,7 +1135,7 @@ async function loadPending() {
               .filter(Boolean)
               .join(' · ');
             return `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
-              <div class="muted">${what}</div><div class="muted path">${esc(p.path)}</div></span>
+              <div class="muted">${what}</div><div class="muted path" title="${esc(p.path)}">📁 ${esc(shortPath(p.path))}</div></span>
               <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}" data-path="${esc(p.path)}">Ver</button></li>`;
           })
           .join('')}</ul></div>`
@@ -1129,5 +1155,5 @@ $('#pending').addEventListener('click', (e) => {
 });
 
 loadAccounts()
-  .then(loadPending)
+  .then(() => Promise.all([checkConnections(), loadPending()]))
   .catch((err) => toast(err.message, true));

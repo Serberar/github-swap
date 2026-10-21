@@ -119,6 +119,42 @@ main { max-width: 960px; margin: 0 auto; padding: 24px; }
 
 .card-head { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
 
+/* Tarjeta de cuenta */
+.card.account { display: flex; flex-direction: column; }
+.card.account .card-head { align-items: flex-start; margin-bottom: 4px; }
+.card.account h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.card.account .avatar { width: 56px; height: 56px; }
+button.icon {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: .6;
+}
+button.icon:hover { opacity: 1; }
+.ok-text { color: var(--ok); font-weight: 600; font-size: 14px; }
+.warn-text { color: var(--warn); font-weight: 600; font-size: 14px; }
+.acc-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.acc-row .label { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.acc-row .path { font-size: 13px; overflow-wrap: anywhere; }
+.small { font-size: 12px; }
+.acc-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+
 .avatar {
   width: 48px;
   height: 48px;

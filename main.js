@@ -55,8 +55,8 @@ async function pickFolder(title, defaultPath) {
 
 function readyAccount(alias) {
   const meta = store.account(alias);
-  if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (Editar)');
-  if (!meta.githubUser) throw new Error('Primero pulsa «Comprobar» en esta cuenta');
+  if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (✏️)');
+  if (!meta.githubUser) throw new Error('Esta cuenta todavía no conecta con GitHub: pulsa «Terminar configuración»');
   return meta;
 }
 
@@ -321,29 +321,30 @@ const handlers = {
 
   async makeDefault(alias) {
     const meta = store.account(alias);
-    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (Editar)');
+    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (✏️)');
     await git.setGlobalIdentity(meta);
   },
 
-  async addFolder(alias) {
+  async copyPublicKey(alias) {
+    const key = ssh.readPublicKey(findHost(alias).identityFile);
+    if (!key) throw new Error('No encuentro la llave de esta cuenta');
+    clipboard.writeText(key);
+  },
+
+  // Cada cuenta tiene una carpeta: la nueva sustituye a la anterior (no se mueve nada).
+  async setFolder(alias) {
     const meta = store.account(alias);
-    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (Editar)');
-    const folder = await pickFolder(`Carpeta para la cuenta "${meta.label || defaultLabel(alias)}"`);
+    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esta cuenta (✏️)');
+    const folder = await pickFolder(`Carpeta para la cuenta «${meta.label || defaultLabel(alias)}»`, meta.folders[0]);
     if (!folder) return null;
     for (const [other, m] of Object.entries(store.data.accounts)) {
       if (other !== alias && m.folders.includes(folder)) throw new Error('Esa carpeta ya es de otra cuenta');
     }
+    for (const f of meta.folders) await git.unmapFolder(f);
     await git.mapFolder(folder, alias, meta);
-    if (!meta.folders.includes(folder)) meta.folders.push(folder);
+    meta.folders = [folder];
     store.save();
     return folder;
-  },
-
-  async removeFolder(alias, folder) {
-    await git.unmapFolder(folder);
-    const meta = store.account(alias);
-    meta.folders = meta.folders.filter((f) => f !== folder);
-    store.save();
   },
 
   async localProjects() {
@@ -363,7 +364,7 @@ const handlers = {
 
   async assignProject(dir, alias) {
     const meta = store.account(alias);
-    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esa cuenta (Editar)');
+    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esa cuenta (✏️)');
     const info = await git.assignRepo(dir, alias, meta);
     const scan = store.data.localScan;
     if (scan) {
@@ -375,7 +376,7 @@ const handlers = {
 
   async cloneProject(url, alias) {
     const meta = store.account(alias);
-    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esa cuenta (Editar)');
+    if (!meta.name || !meta.email) throw new Error('Primero pon tu nombre y email en esa cuenta (✏️)');
     const parent = await accountFolder(alias);
     if (!parent) return null;
     return git.cloneRepo(url, alias, parent, meta);
