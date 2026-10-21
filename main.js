@@ -123,8 +123,9 @@ const handlers = {
 
   async repoDetails(alias, fullName) {
     const meta = readyAccount(alias);
-    const d = await github.repoDetails(meta.githubUser, fullName);
-    return { ...d, localPath: localCopy(meta, d.name, d.fullName) };
+    const localPath = localCopy(meta, fullName.split('/')[1], fullName);
+    const branch = localPath ? await git.currentBranch(localPath) : null;
+    return { ...(await github.repoDetails(meta.githubUser, fullName, branch)), localPath };
   },
 
   async setVisibility(alias, fullName, isPrivate) {
