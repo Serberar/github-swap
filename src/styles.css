@@ -256,7 +256,20 @@ h4 { margin: 16px 0 6px; font-size: 14px; }
 }
 .people li:last-child, .commits li:last-child { border-bottom: none; }
 .commits li > .grow > div:first-child { overflow-wrap: anywhere; }
-.files li { font-size: 13px; padding: 2px 0; word-break: break-all; }
+.files li { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 2px 0; word-break: break-all; }
+
+.pending {
+  background: var(--warn-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px 4px;
+  margin-bottom: 20px;
+}
+.pending .people { margin: 8px 0 0; }
+
+button.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.result + .page-head { margin-top: 16px; }
 
 .setting {
   display: flex;
