@@ -192,6 +192,11 @@ const handlers = {
     return git.localStatus(dir, { fetch: false });
   },
 
+  async ignoreLocal(dir, files) {
+    await git.ignoreLocal(dir, files);
+    return git.localStatus(dir, { fetch: false });
+  },
+
   async discardAll(dir) {
     await git.discardAll(dir);
     return git.localStatus(dir, { fetch: false });
