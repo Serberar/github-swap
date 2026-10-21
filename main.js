@@ -70,12 +70,15 @@ async function accountFolder(alias) {
   return folder;
 }
 
-function localCopy(meta, name) {
+// Dónde está descargado un repo: primero en las carpetas de la cuenta,
+// después en lo que encontró la última búsqueda en el ordenador.
+function localCopy(meta, name, fullName) {
   for (const f of meta.folders) {
     const dir = path.join(f, name);
     if (fs.existsSync(path.join(dir, '.git'))) return dir;
   }
-  return null;
+  const found = store.data.localScan?.repos.find((r) => r.fullName?.toLowerCase() === fullName?.toLowerCase());
+  return found && fs.existsSync(found.path) ? found.path : null;
 }
 
 const handlers = {
@@ -111,8 +114,54 @@ const handlers = {
     const repos = await github.listRepos(meta.githubUser);
     return {
       folder: meta.folders[0] || null,
-      repos: repos.map((r) => ({ ...r, localPath: localCopy(meta, r.name) })),
+      repos: repos.map((r) => ({ ...r, localPath: localCopy(meta, r.name, r.fullName) })),
     };
+  },
+
+  async repoDetails(alias, fullName) {
+    const meta = readyAccount(alias);
+    const d = await github.repoDetails(meta.githubUser, fullName);
+    return { ...d, localPath: localCopy(meta, d.name, d.fullName) };
+  },
+
+  async setVisibility(alias, fullName, isPrivate) {
+    await github.updateRepo(readyAccount(alias).githubUser, fullName, { private: !!isPrivate });
+  },
+
+  async setDescription(alias, fullName, description) {
+    await github.updateRepo(readyAccount(alias).githubUser, fullName, { description: description || '' });
+  },
+
+  async inviteCollaborator(alias, fullName, login) {
+    const clean = String(login || '').trim().replace(/^@/, '');
+    if (!/^[A-Za-z0-9-]+$/.test(clean)) throw new Error('Escribe el nombre de usuario de GitHub, sin espacios');
+    await github.inviteCollaborator(readyAccount(alias).githubUser, fullName, clean);
+  },
+
+  async removeCollaborator(alias, fullName, login) {
+    await github.removeCollaborator(readyAccount(alias).githubUser, fullName, login);
+  },
+
+  async cancelInvitation(alias, fullName, id) {
+    await github.cancelInvitation(readyAccount(alias).githubUser, fullName, id);
+  },
+
+  async localStatus(dir) {
+    return git.localStatus(dir);
+  },
+
+  async pullProject(dir) {
+    await git.pullProject(dir);
+    return git.localStatus(dir);
+  },
+
+  async pushProject(dir, message) {
+    await git.pushProject(dir, String(message || '').trim());
+    return git.localStatus(dir);
+  },
+
+  async openInEditor(dir) {
+    await shell.openExternal('vscode://file/' + encodeURI(dir.replace(/\\/g, '/')));
   },
 
   async downloadRepo(alias, fullName) {
