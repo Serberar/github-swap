@@ -6,10 +6,12 @@ const ssh = require('./lib/ssh');
 const git = require('./lib/git');
 const github = require('./lib/github');
 const tools = require('./lib/tools');
+const updater = require('./lib/updater');
 const { Store } = require('./lib/store');
 
 let win;
 let store;
+let update = null; // versión nueva encontrada en GitHub
 
 // Misma carpeta de datos con `npm start` y con la app instalada (que se llama "GitHub Swap").
 app.setPath('userData', path.join(app.getPath('appData'), 'github-swap'));
@@ -100,6 +102,19 @@ const handlers = {
 
   async installGit() {
     await tools.installGit();
+  },
+
+  // Solo en la app instalada: con `npm start` no hay nada que actualizar.
+  async checkUpdate() {
+    if (!app.isPackaged) return null;
+    update = await updater.check(app.getVersion()).catch(() => null);
+    return update && update.version;
+  },
+
+  async installUpdate() {
+    if (!update) throw new Error('No hay ninguna actualización pendiente');
+    await updater.install(update.url);
+    setTimeout(() => app.quit(), 500);
   },
 
   async grantAccess(alias) {
