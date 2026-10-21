@@ -68,7 +68,29 @@ async function loadAccounts() {
   accounts = data.accounts;
   globalIdentity = data.global;
   hasGh = data.hasGh;
+  renderSetup(data.hasGit);
   renderAccounts();
+}
+
+// Aviso si falta Git: sin él no se puede descargar ni subir nada.
+function renderSetup(hasGit) {
+  $('#setup').innerHTML = hasGit
+    ? ''
+    : `<div class="pending setup">
+        <div class="grow">
+          <b>⚠️ Falta Git en este ordenador</b>
+          <div class="muted">Sin Git la app no puede descargar ni subir proyectos. Se instala en un par de minutos; Windows te pedirá permiso.</div>
+        </div>
+        <button class="primary" id="install-git">Instalar Git</button>
+      </div>`;
+  $('#install-git')?.addEventListener('click', (e) =>
+    busy(e.target, async () => {
+      e.target.textContent = 'Instalando… (puede tardar)';
+      await call('installGit');
+      toast('Git instalado ✓');
+      await loadAccounts();
+    })
+  );
 }
 
 // Rutas más cortas para leer: «C:\Users\X\Desktop\…» → «Escritorio\…».

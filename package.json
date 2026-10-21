@@ -1,11 +1,12 @@
 {
   "name": "github-swap",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Gestiona varias cuentas de GitHub (claves SSH, identidades y repos) desde una interfaz sencilla",
   "author": "Sergio",
   "main": "main.js",
   "scripts": {
     "start": "node scripts/start.js",
+    "predist": "node scripts/fetch-gh.js",
     "dist": "electron-builder --win nsis"
   },
   "devDependencies": {
@@ -24,6 +25,12 @@
       "lib/**",
       "src/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/gh",
+        "to": "gh"
+      }
     ],
     "directories": {
       "output": "release"

@@ -302,6 +302,7 @@ h4 { margin: 16px 0 6px; font-size: 14px; }
   margin-bottom: 20px;
 }
 .pending .people { margin: 8px 0 0; }
+.pending.setup { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding-bottom: 14px; }
 
 
 /* Página de un proyecto: cabecera + dos columnas que apilan sus tarjetas (sin huecos). */
