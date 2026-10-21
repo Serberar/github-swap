@@ -93,6 +93,25 @@ function renderSetup(hasGit) {
   );
 }
 
+// Aviso si hay una versión nueva publicada en GitHub.
+async function checkUpdate() {
+  const version = await call('checkUpdate');
+  if (!version) return;
+  $('#update').innerHTML = `<div class="pending setup">
+      <div class="grow">
+        <b>Hay una versión nueva de GitHub Swap (${esc(version)})</b>
+        <div class="muted">Se descarga e instala sola; la app se cerrará y volverá a abrirse.</div>
+      </div>
+      <button class="primary" id="install-update">Actualizar</button>
+    </div>`;
+  $('#install-update').addEventListener('click', (e) =>
+    busy(e.target, async () => {
+      e.target.textContent = 'Descargando…';
+      await call('installUpdate');
+    })
+  );
+}
+
 // Rutas más cortas para leer: «C:\Users\X\Desktop\…» → «Escritorio\…».
 function shortPath(p) {
   return String(p || '')
@@ -1228,6 +1247,8 @@ $('#pending').addEventListener('click', (e) => {
   openAccountPage(acc);
   openRepoPage(btn.dataset.repo, { path: btn.dataset.path, focus: true });
 });
+
+checkUpdate().catch(() => {});
 
 loadAccounts()
   .then(() => Promise.all([checkConnections(), loadPending()]))
