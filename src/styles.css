@@ -238,6 +238,38 @@ ol.howto li { margin-bottom: 8px; }
   border-radius: 10px;
 }
 
+.grow { flex: 1; min-width: 0; }
+.actions.spaced { margin-bottom: 20px; }
+.cards.wide { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
+.card h3 { margin-bottom: 12px; }
+h4 { margin: 16px 0 6px; font-size: 14px; }
+
+.avatar.sm { width: 28px; height: 28px; font-size: 13px; }
+
+.people, .commits, .files { list-style: none; padding: 0; margin: 0 0 12px; }
+.people li, .commits li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.people li:last-child, .commits li:last-child { border-bottom: none; }
+.commits li > .grow > div:first-child { overflow-wrap: anywhere; }
+.files li { font-size: 13px; padding: 2px 0; word-break: break-all; }
+
+.setting {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.inline-form input { flex: 1 1 200px; margin: 0; }
+
 .choice { display: flex; gap: 8px; align-items: center; font-weight: 400; margin-bottom: 6px; }
 .choice input { width: auto; margin: 0; }
 

@@ -417,12 +417,8 @@ function renderRepos() {
           <div class="muted">Último cambio ${esc(ago(r.updatedAt))}</div>
         </div>
         <div class="actions">
-          ${
-            r.localPath
-              ? `<button data-local="${esc(r.localPath)}">Abrir carpeta</button>`
-              : `<button class="primary" data-download>Descargar</button>`
-          }
-          <button class="link" data-web="${esc(r.url)}">Ver en GitHub</button>
+          ${r.localPath ? '' : `<button data-download>Descargar</button>`}
+          <button class="primary" data-manage>Gestionar →</button>
         </div>
       </div>`;
     })
@@ -435,8 +431,7 @@ $('#back').addEventListener('click', () => showView('accounts'));
 $('#repo-list').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
-  if (btn.dataset.local) return call('openFolder', btn.dataset.local);
-  if (btn.dataset.web) return call('openOnGitHub', btn.dataset.web);
+  if (btn.hasAttribute('data-manage')) return openRepoPage(btn.closest('[data-repo]').dataset.repo);
   if (btn.hasAttribute('data-download')) {
     const fullName = btn.closest('[data-repo]').dataset.repo;
     await busy(btn, async () => {
@@ -583,6 +578,248 @@ $('#project-list').addEventListener('change', async (e) => {
 $('#project-list').addEventListener('click', (e) => {
   if (e.target.matches('[data-open]')) call('openFolder', e.target.closest('[data-path]').dataset.path);
 });
+
+/* ---------- Página de un proyecto ---------- */
+
+let repo = null;
+
+const CHANGE_LABELS = { '?': 'Nuevo', A: 'Nuevo', M: 'Cambiado', D: 'Borrado', R: 'Renombrado' };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+async function openRepoPage(fullName) {
+  $('#repo-body').innerHTML = '<p class="muted">Cargando…</p>';
+  showView('repo-page');
+  await reloadRepoPage(fullName);
+}
+
+async function reloadRepoPage(fullName = repo.fullName) {
+  try {
+    repo = await call('repoDetails', pageAccount.alias, fullName);
+    renderRepoPage();
+    loadLocal();
+  } catch (err) {
+    $('#repo-body').innerHTML = `<div class="result err">${esc(err.message)}</div>`;
+  }
+}
+
+function personRow(p, extra, button) {
+  const pic = p.avatar
+    ? `<img class="avatar sm" src="${esc(p.avatar)}" alt="">`
+    : `<div class="avatar sm">${esc(p.login.charAt(0).toUpperCase())}</div>`;
+  return `<li>${pic}<span class="grow">@${esc(p.login)} ${extra}</span>${button}</li>`;
+}
+
+function renderRepoPage() {
+  const r = repo;
+  const people = [
+    ...r.collaborators.map((c) =>
+      personRow(c, '', `<button class="link danger" data-act="remove" data-login="${esc(c.login)}">Quitar</button>`)
+    ),
+    ...r.invitations.map((i) =>
+      personRow(
+        i,
+        '<span class="badge warn">Invitación pendiente</span>',
+        `<button class="link danger" data-act="cancel-invite" data-id="${i.id}" data-login="${esc(i.login)}">Cancelar</button>`
+      )
+    ),
+  ];
+  const access = r.admin
+    ? `
+      <div class="setting">
+        <div>
+          <b>${r.private ? '🔒 Privado' : '🌍 Público'}</b>
+          <div class="muted">${r.private ? 'Solo tú y las personas invitadas pueden verlo.' : 'Cualquiera en internet puede verlo y descargarlo.'}</div>
+        </div>
+        <button data-act="visibility">${r.private ? 'Hacer público' : 'Hacer privado'}</button>
+      </div>
+      <h4>Personas con acceso</h4>
+      <ul class="people">${people.join('') || '<li class="muted">Nadie más tiene acceso.</li>'}</ul>
+      <form id="invite-form" class="inline-form">
+        <input name="login" placeholder="Usuario de GitHub (ej. pepe123)" required aria-label="Usuario de GitHub">
+        <button class="primary" type="submit">Invitar</button>
+      </form>
+      <p class="muted">Le llegará un email de GitHub. Cuando acepte, podrá ver y subir cambios.</p>`
+    : `<p class="muted">Solo el dueño (@${esc(r.owner)}) puede cambiar quién tiene acceso.</p>`;
+  const commits = r.commits.length
+    ? `<ul class="commits">${r.commits
+        .map(
+          (c) => `<li><div class="grow"><div>${esc(c.message)}</div><div class="muted">${esc(c.author)} · ${esc(ago(c.date))}</div></div>
+            <button class="link" data-web="${esc(c.url)}">Ver</button></li>`
+        )
+        .join('')}</ul>`
+    : '<p class="muted">Todavía no hay cambios.</p>';
+
+  $('#repo-body').innerHTML = `
+    <div class="page-head">
+      <div class="grow">
+        <h2>${esc(r.name)} <span class="badge neutral">${r.private ? '🔒 Privado' : 'Público'}</span></h2>
+        <div class="muted">${esc(r.fullName)}</div>
+        <p>${r.description ? esc(r.description) : '<span class="muted">Sin descripción</span>'}
+          ${r.admin ? '<button class="link" data-act="edit-desc">Editar</button>' : ''}</p>
+      </div>
+    </div>
+    <div class="actions spaced">
+      ${
+        r.localPath
+          ? `<button class="primary" data-act="open-code">Abrir en VS Code</button><button data-act="open-folder">Abrir carpeta</button>`
+          : `<button class="primary" data-act="download">Descargar a mi ordenador</button>`
+      }
+      <button class="link" data-web="${esc(r.url)}">Ver en GitHub</button>
+    </div>
+    <div class="cards wide">
+      ${r.localPath ? `<section class="card"><h3>En tu ordenador</h3><div id="local-box"><p class="muted">Comprobando…</p></div></section>` : ''}
+      <section class="card"><h3>Quién tiene acceso</h3>${access}</section>
+      <section class="card"><h3>Últimos cambios</h3>${commits}</section>
+    </div>`;
+  $('#invite-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const login = new FormData(e.target).get('login');
+    await busy(e.submitter, async () => {
+      await call('inviteCollaborator', pageAccount.alias, repo.fullName, login);
+      toast(`Invitación enviada a @${String(login).replace(/^@/, '')}`);
+      await reloadRepoPage();
+    });
+  });
+}
+
+async function loadLocal() {
+  if (!repo.localPath) return;
+  try {
+    renderLocalBox(await call('localStatus', repo.localPath));
+  } catch (err) {
+    const box = $('#local-box');
+    if (box) box.innerHTML = `<div class="result err">${esc(err.message)}</div>`;
+  }
+}
+
+function renderLocalBox(st) {
+  const box = $('#local-box');
+  if (!box) return;
+  const parts = [];
+  if (st.behind) {
+    parts.push(`
+      <div class="setting">
+        <div><b>Hay ${plural(st.behind, 'cambio nuevo', 'cambios nuevos')} en GitHub</b>
+        <div class="muted">Tráelos antes de ponerte a trabajar.</div></div>
+        <button class="primary" data-act="pull">Traer cambios</button>
+      </div>`);
+  }
+  if (st.changes.length) {
+    const files = st.changes
+      .map((c) => `<li><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</li>`)
+      .join('');
+    parts.push(`
+      <div>
+        <b>Has cambiado ${plural(st.changes.length, 'archivo', 'archivos')}</b>
+        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul></details>
+        <form id="push-form" class="inline-form">
+          <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
+          <button class="primary" type="submit">Guardar y subir</button>
+        </form>
+      </div>`);
+  } else if (st.ahead) {
+    parts.push(`
+      <div class="setting">
+        <div><b>Tienes ${plural(st.ahead, 'cambio guardado', 'cambios guardados')} sin subir</b></div>
+        <button class="primary" data-act="push">Subir</button>
+      </div>`);
+  }
+  box.innerHTML = parts.join('') || '<p><span class="badge ok">✓ Todo al día</span> <span class="muted">Tu ordenador y GitHub tienen lo mismo.</span></p>';
+  $('#push-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    pushChanges(e.submitter, new FormData(e.target).get('message'));
+  });
+}
+
+async function pushChanges(btn, message) {
+  await busy(btn, async () => {
+    renderLocalBox(await call('pushProject', repo.localPath, message));
+    toast('Cambios subidos a GitHub ✓');
+    await reloadRepoPage();
+  });
+}
+
+$('#repo-back').addEventListener('click', () => {
+  showView('account-page');
+  reloadRepos();
+});
+
+$('#repo-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.dataset.web) return call('openOnGitHub', btn.dataset.web);
+  const r = repo;
+  switch (btn.dataset.act) {
+    case 'open-code':
+      return call('openInEditor', r.localPath);
+    case 'open-folder':
+      return call('openFolder', r.localPath);
+    case 'download':
+      return busy(btn, async () => {
+        if (await call('downloadRepo', pageAccount.alias, r.fullName)) {
+          toast('Descargado ✓');
+          await reloadRepoPage();
+        }
+      });
+    case 'pull':
+      return busy(btn, async () => {
+        renderLocalBox(await call('pullProject', r.localPath));
+        toast('Cambios traídos ✓');
+      });
+    case 'push':
+      return pushChanges(btn, '');
+    case 'visibility': {
+      const msg = r.private
+        ? `¿Hacer público «${r.name}»?\n\nCualquier persona en internet podrá ver y descargar todo el código. Revisa que no haya contraseñas ni datos privados.`
+        : `¿Hacer privado «${r.name}»?\n\nSolo tú y las personas invitadas podrán verlo.`;
+      if (!confirm(msg)) return;
+      return busy(btn, async () => {
+        await call('setVisibility', pageAccount.alias, r.fullName, !r.private);
+        toast(r.private ? 'Ahora es público' : 'Ahora es privado');
+        await reloadRepoPage();
+      });
+    }
+    case 'remove':
+      if (!confirm(`¿Quitar a @${btn.dataset.login} de «${r.name}»?\n\nDejará de poder verlo y subir cambios.`)) return;
+      return busy(btn, async () => {
+        await call('removeCollaborator', pageAccount.alias, r.fullName, btn.dataset.login);
+        toast(`@${btn.dataset.login} ya no tiene acceso`);
+        await reloadRepoPage();
+      });
+    case 'cancel-invite':
+      return busy(btn, async () => {
+        await call('cancelInvitation', pageAccount.alias, r.fullName, btn.dataset.id);
+        toast(`Invitación a @${btn.dataset.login} cancelada`);
+        await reloadRepoPage();
+      });
+    case 'edit-desc':
+      return editDescription();
+  }
+});
+
+function editDescription() {
+  modalBody.innerHTML = `
+    <h2>Descripción de «${esc(repo.name)}»</h2>
+    <form id="desc-form">
+      <label>Una frase que explique de qué va el proyecto
+        <input name="description" value="${esc(repo.description || '')}" autofocus>
+      </label>
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Guardar</button>
+      </div>
+    </form>`;
+  $('#desc-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await busy(e.submitter, async () => {
+      await call('setDescription', pageAccount.alias, repo.fullName, new FormData(e.target).get('description'));
+      modal.close();
+      toast('Descripción guardada');
+      await reloadRepoPage();
+    });
+  });
+  modal.showModal();
+}
 
 /* ---------- Descargar con un enlace ---------- */
 
