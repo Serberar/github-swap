@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const ssh = require('./lib/ssh');
 const git = require('./lib/git');
@@ -110,6 +111,38 @@ const handlers = {
 
   async cancelAccess() {
     github.cancelLogin();
+  },
+
+  // Conecta una cuenta nueva de una vez: login en GitHub, subir la llave y comprobar que funciona.
+  async connectAccount(alias) {
+    const meta = store.account(alias);
+    const key = ssh.readPublicKey(findHost(alias).identityFile);
+    if (!key) throw new Error('No encuentro la llave de esta cuenta');
+    const user = await github.login((code) => win.webContents.send('login-code', code));
+    // Antes de subir nada: que no sea otra cuenta que ya tienes en la app
+    const clash = Object.entries(store.data.accounts).find(
+      ([a, m]) => a !== alias && m.githubUser && m.githubUser.toLowerCase() === user.toLowerCase()
+    );
+    if (clash) {
+      throw new Error(
+        `Has entrado como @${user}, que ya es tu cuenta «${clash[1].label || defaultLabel(clash[0])}». ` +
+          'Cierra sesión en GitHub en el navegador, entra con la cuenta que quieres añadir y vuelve a intentarlo.'
+      );
+    }
+    await github.uploadKey(user, `GitHub Swap · ${os.hostname()}`, key);
+    let r;
+    for (let i = 0; i < 5; i++) {
+      r = await ssh.testConnection(alias);
+      if (r.ok) break;
+      await new Promise((res) => setTimeout(res, 1500)); // GitHub tarda un instante en aceptar una llave nueva
+    }
+    if (!r.ok) throw new Error('La llave se ha subido, pero GitHub todavía no la acepta. Prueba otra vez en un minuto.');
+    if (r.user.toLowerCase() !== user.toLowerCase()) {
+      throw new Error(`Esta llave ya estaba dada de alta en otra cuenta (@${r.user}). Usa «Prefiero pegar la llave a mano».`);
+    }
+    meta.githubUser = r.user;
+    store.save();
+    return { user: r.user };
   },
 
   async accountRepos(alias) {
