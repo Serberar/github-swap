@@ -247,7 +247,25 @@ function wizard(acc, step) {
     });
   }
 
-  if (step === 2) {
+  if (step === 2) return hasGh ? connectWizard(acc) : wizard(acc, 'manual');
+
+  if (step === 'done') {
+    modalBody.innerHTML = `
+      ${steps(3)}
+      <h2>¡Listo!</h2>
+      <div class="result ok">«${esc(acc.label)}» está conectada como @${esc(acc.githubUser)}. Ya puedes usarla.</div>
+      <div class="modal-actions">
+        <button data-close>Cerrar</button>
+        <button class="primary" id="go-projects">📂 Ver mis proyectos</button>
+      </div>`;
+    $('#go-projects').addEventListener('click', () => {
+      modal.close();
+      const fresh = accounts.find((a) => a.alias === acc.alias);
+      if (fresh) openAccountPage(fresh);
+    });
+  }
+
+  if (step === 'manual') {
     modalBody.innerHTML = `
       ${steps(2)}
       <h2>Conecta «${esc(acc.label)}» con GitHub</h2>
@@ -268,10 +286,10 @@ function wizard(acc, step) {
         toast('Llave copiada. Pégala en GitHub con Ctrl+V');
       })
     );
-    $('#next').addEventListener('click', () => wizard(acc, 3));
+    $('#next').addEventListener('click', () => wizard(acc, 'check'));
   }
 
-  if (step === 3) {
+  if (step === 'check') {
     modalBody.innerHTML = `
       ${steps(3)}
       <h2>Comprobando…</h2>
@@ -292,14 +310,30 @@ function wizard(acc, step) {
           box.className = 'result err';
           box.textContent = 'GitHub aún no reconoce la llave. ¿La pegaste en la cuenta correcta y pulsaste «Add SSH key»?';
           actions.innerHTML = `<button id="back">← Volver al paso anterior</button><button class="primary" id="retry">Reintentar</button>`;
-          $('#back').addEventListener('click', () => wizard(acc, 2));
-          $('#retry').addEventListener('click', () => wizard(acc, 3));
+          $('#back').addEventListener('click', () => wizard(acc, 'manual'));
+          $('#retry').addEventListener('click', () => wizard(acc, 'check'));
         }
       })
       .catch((err) => toast(err.message, true));
   }
 
   if (!modal.open) modal.showModal();
+}
+
+// Paso 2 automático: un solo código en GitHub y la app sube la llave y da acceso a los proyectos.
+async function connectWizard(acc) {
+  const ok = await codeModal({
+    header: steps(2),
+    title: `Conecta «${acc.label}» con GitHub`,
+    intro: 'La app subirá la llave a GitHub y te dará acceso a tus proyectos, todo de una vez.',
+    user: null,
+    closeOnSuccess: false,
+    alt: { label: 'Prefiero pegar la llave a mano', onClick: () => wizard(acc, 'manual') },
+    action: () => call('connectAccount', acc.alias),
+  });
+  if (!ok) return;
+  await loadAccounts();
+  wizard(accounts.find((a) => a.alias === acc.alias) || acc, 'done');
 }
 
 function editAccount(acc) {
@@ -349,30 +383,49 @@ window.api.onLoginCode((code) => {
 });
 
 // Diálogo con el código de un solo uso de GitHub. Resuelve true si GitHub dio el permiso.
-function codeModal({ title, intro, user, action }) {
+// user: la cuenta con la que hay que entrar (null si es una cuenta nueva); alt: botón alternativo.
+function codeModal({ title, intro, user, action, header = '', alt = null, closeOnSuccess = true }) {
   return new Promise((resolve) => {
     modalBody.innerHTML = `
+      ${header}
       <h2>${esc(title)}</h2>
       <p>${esc(intro)}</p>
       <ol class="howto">
-        <li>Comprueba que en el navegador has entrado como <b>@${esc(user)}</b>.</li>
+        <li>${
+          user
+            ? `Comprueba que en el navegador has entrado como <b>@${esc(user)}</b>.`
+            : 'Abre el navegador con la sesión de <b>la cuenta de GitHub que quieres añadir</b> (no otra).'
+        }</li>
         <li>Pulsa el botón, pega el código en GitHub y acepta.</li>
       </ol>
       <div class="code" id="login-code">· · · · – · · · ·</div>
       <p><button class="primary" id="open-device" disabled>Copiar código y abrir GitHub</button></p>
       <p class="muted" id="login-status">Esperando a que aceptes en GitHub…</p>
-      <div class="modal-actions"><button type="button" data-close>Cancelar</button></div>`;
+      <div class="modal-actions">
+        ${alt ? `<button type="button" class="link" id="code-alt">${esc(alt.label)}</button><span class="grow"></span>` : ''}
+        <button type="button" data-close>Cancelar</button>
+      </div>`;
     $('#open-device').addEventListener('click', async () => {
       await navigator.clipboard.writeText($('#login-code').textContent).catch(() => {});
       call('openOnGitHub', 'https://github.com/login/device');
     });
+    $('#code-alt')?.addEventListener('click', () => {
+      if (grantPending) {
+        grantPending = false;
+        call('cancelAccess');
+      }
+      resolve(false);
+      alt.onClick();
+    });
     modal.showModal();
+    document.activeElement?.blur(); // que el foco no resalte el enlace alternativo
 
     grantPending = true;
     action()
       .then(() => {
+        if (!grantPending) return; // se eligió la alternativa
         grantPending = false;
-        modal.close();
+        if (closeOnSuccess) modal.close();
         resolve(true);
       })
       .catch((err) => {
