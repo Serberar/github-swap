@@ -1,0 +1,15 @@
+{
+  "name": "github-swap",
+  "version": "0.1.0",
+  "description": "Gestiona varias cuentas de GitHub (claves SSH, identidades y repos) desde una interfaz sencilla",
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/start.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
