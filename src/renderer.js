@@ -57,6 +57,7 @@ document.querySelectorAll('.tab').forEach((tab) =>
   tab.addEventListener('click', () => {
     showView(tab.dataset.tab);
     if (tab.dataset.tab === 'projects') loadProjects(false);
+    if (tab.dataset.tab === 'accounts') loadPending();
   })
 );
 
@@ -308,7 +309,10 @@ modal.addEventListener('click', (e) => {
 let grantPending = false;
 
 modal.addEventListener('close', () => {
-  if (grantPending) call('cancelAccess');
+  if (grantPending) {
+    grantPending = false;
+    call('cancelAccess');
+  }
 });
 
 window.api.onLoginCode((code) => {
@@ -318,42 +322,56 @@ window.api.onLoginCode((code) => {
   $('#open-device').disabled = false;
 });
 
-function grantAccess(acc) {
-  modalBody.innerHTML = `
-    <h2>Ver los proyectos de «${esc(acc.label)}»</h2>
-    <p>Solo hay que hacerlo una vez. GitHub te pedirá permiso para que esta app vea y cree tus proyectos.</p>
-    <ol class="howto">
-      <li>Comprueba que en el navegador has entrado como <b>@${esc(acc.githubUser)}</b>.</li>
-      <li>Pulsa el botón, pega el código en GitHub y acepta.</li>
-    </ol>
-    <div class="code" id="login-code">· · · · – · · · ·</div>
-    <p><button class="primary" id="open-device" disabled>Copiar código y abrir GitHub</button></p>
-    <p class="muted" id="login-status">Esperando a que aceptes en GitHub…</p>
-    <div class="modal-actions"><button type="button" data-close>Cancelar</button></div>`;
-  $('#open-device').addEventListener('click', async () => {
-    await navigator.clipboard.writeText($('#login-code').textContent).catch(() => {});
-    call('openOnGitHub', 'https://github.com/login/device');
-  });
-  modal.showModal();
-
-  grantPending = true;
-  call('grantAccess', acc.alias)
-    .then(async () => {
-      grantPending = false;
-      modal.close();
-      toast('¡Listo! Ya puedes ver tus proyectos');
-      await loadAccounts();
-      openAccountPage(accounts.find((a) => a.alias === acc.alias));
-    })
-    .catch((err) => {
-      if (!grantPending) return; // cancelado por el usuario
-      grantPending = false;
-      const status = $('#login-status');
-      if (status) {
-        status.className = 'result err';
-        status.textContent = err.message;
-      }
+// Diálogo con el código de un solo uso de GitHub. Resuelve true si GitHub dio el permiso.
+function codeModal({ title, intro, user, action }) {
+  return new Promise((resolve) => {
+    modalBody.innerHTML = `
+      <h2>${esc(title)}</h2>
+      <p>${esc(intro)}</p>
+      <ol class="howto">
+        <li>Comprueba que en el navegador has entrado como <b>@${esc(user)}</b>.</li>
+        <li>Pulsa el botón, pega el código en GitHub y acepta.</li>
+      </ol>
+      <div class="code" id="login-code">· · · · – · · · ·</div>
+      <p><button class="primary" id="open-device" disabled>Copiar código y abrir GitHub</button></p>
+      <p class="muted" id="login-status">Esperando a que aceptes en GitHub…</p>
+      <div class="modal-actions"><button type="button" data-close>Cancelar</button></div>`;
+    $('#open-device').addEventListener('click', async () => {
+      await navigator.clipboard.writeText($('#login-code').textContent).catch(() => {});
+      call('openOnGitHub', 'https://github.com/login/device');
     });
+    modal.showModal();
+
+    grantPending = true;
+    action()
+      .then(() => {
+        grantPending = false;
+        modal.close();
+        resolve(true);
+      })
+      .catch((err) => {
+        if (grantPending) {
+          grantPending = false;
+          const status = $('#login-status');
+          status.className = 'result err';
+          status.textContent = err.message;
+        }
+        resolve(false);
+      });
+  });
+}
+
+async function grantAccess(acc) {
+  const ok = await codeModal({
+    title: `Ver los proyectos de «${acc.label}»`,
+    intro: 'Solo hay que hacerlo una vez. GitHub te pedirá permiso para que esta app vea y cree tus proyectos.',
+    user: acc.githubUser,
+    action: () => call('grantAccess', acc.alias),
+  });
+  if (!ok) return;
+  toast('¡Listo! Ya puedes ver tus proyectos');
+  await loadAccounts();
+  openAccountPage(accounts.find((a) => a.alias === acc.alias));
 }
 
 /* ---------- Proyectos de una cuenta ---------- */
@@ -649,7 +667,51 @@ function renderRepoPage() {
         .join('')}</ul>`
     : '<p class="muted">Todavía no hay cambios.</p>';
 
+  const tasks = !r.hasIssues
+    ? `<p class="muted">Las tareas están desactivadas en este proyecto.</p>
+       ${r.admin ? '<button data-act="enable-issues">Activar tareas</button>' : ''}`
+    : `
+      <ul class="commits">${
+        r.issues
+          .map(
+            (i) => `<li><div class="grow"><div>${esc(i.title)}</div>
+              <div class="muted">#${i.number} · ${esc(i.author || '')} · ${esc(ago(i.date))}${i.comments ? ` · 💬 ${i.comments}` : ''}</div></div>
+              <button class="link" data-web="${esc(i.url)}">Ver</button>
+              ${r.archived ? '' : `<button data-act="close-issue" data-number="${i.number}" data-title="${esc(i.title)}">✓ Hecha</button>`}</li>`
+          )
+          .join('') || '<li class="muted">No hay tareas pendientes. 🎉</li>'
+      }</ul>
+      ${
+        r.archived
+          ? ''
+          : `<form id="issue-form" class="inline-form">
+              <input name="title" placeholder="Nueva tarea (ej. arreglar el login)" required aria-label="Nueva tarea">
+              <button class="primary" type="submit">Añadir</button>
+            </form>`
+      }`;
+
+  const options = r.admin
+    ? `
+      <section class="card">
+        <h3>Más opciones</h3>
+        <div class="setting">
+          <div><b>Cambiar nombre</b><div class="muted">También se cambia en tu ordenador.</div></div>
+          <button data-act="rename">Cambiar nombre</button>
+        </div>
+        <div class="setting">
+          <div><b>${r.archived ? 'Desarchivar' : 'Archivar'}</b>
+          <div class="muted">${r.archived ? 'Vuelve a permitir cambios.' : 'Queda guardado como solo lectura. Se puede deshacer.'}</div></div>
+          <button data-act="archive">${r.archived ? 'Desarchivar' : 'Archivar'}</button>
+        </div>
+        <div class="setting">
+          <div><b>Borrar proyecto</b><div class="muted">Se borra de GitHub para siempre.</div></div>
+          <button class="danger" data-act="delete">Borrar…</button>
+        </div>
+      </section>`
+    : '';
+
   $('#repo-body').innerHTML = `
+    ${r.archived ? '<div class="result err">📦 Este proyecto está archivado: se puede ver y descargar, pero no se pueden subir cambios.</div>' : ''}
     <div class="page-head">
       <div class="grow">
         <h2>${esc(r.name)} <span class="badge neutral">${r.private ? '🔒 Privado' : 'Público'}</span></h2>
@@ -669,8 +731,19 @@ function renderRepoPage() {
     <div class="cards wide">
       ${r.localPath ? `<section class="card"><h3>En tu ordenador</h3><div id="local-box"><p class="muted">Comprobando…</p></div></section>` : ''}
       <section class="card"><h3>Quién tiene acceso</h3>${access}</section>
+      <section class="card"><h3>Tareas ${r.issues.length ? `<span class="badge neutral">${r.issues.length}</span>` : ''}</h3>${tasks}</section>
       <section class="card"><h3>Últimos cambios</h3>${commits}</section>
+      ${options}
     </div>`;
+  $('#issue-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = new FormData(e.target).get('title');
+    await busy(e.submitter, async () => {
+      await call('createIssue', pageAccount.alias, repo.fullName, { title });
+      toast('Tarea añadida');
+      await reloadRepoPage();
+    });
+  });
   $('#invite-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const login = new FormData(e.target).get('login');
@@ -706,12 +779,16 @@ function renderLocalBox(st) {
   }
   if (st.changes.length) {
     const files = st.changes
-      .map((c) => `<li><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</li>`)
+      .map(
+        (c) => `<li><span class="grow"><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</span>
+          <button class="link" data-act="discard" data-file="${esc(c.file)}" title="Volver a como estaba">Deshacer</button></li>`
+      )
       .join('');
     parts.push(`
       <div>
         <b>Has cambiado ${plural(st.changes.length, 'archivo', 'archivos')}</b>
-        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul></details>
+        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul>
+          <button class="link danger" data-act="discard-all">Deshacer todos mis cambios</button></details>
         <form id="push-form" class="inline-form">
           <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
           <button class="primary" type="submit">Guardar y subir</button>
@@ -735,6 +812,7 @@ async function pushChanges(btn, message) {
   await busy(btn, async () => {
     renderLocalBox(await call('pushProject', repo.localPath, message));
     toast('Cambios subidos a GitHub ✓');
+    loadPending();
     await reloadRepoPage();
   });
 }
@@ -765,6 +843,7 @@ $('#repo-body').addEventListener('click', async (e) => {
       return busy(btn, async () => {
         renderLocalBox(await call('pullProject', r.localPath));
         toast('Cambios traídos ✓');
+        loadPending();
       });
     case 'push':
       return pushChanges(btn, '');
@@ -794,8 +873,126 @@ $('#repo-body').addEventListener('click', async (e) => {
       });
     case 'edit-desc':
       return editDescription();
+    case 'discard':
+      if (!confirm(`¿Deshacer los cambios de «${btn.dataset.file}»?\n\nVolverá a como estaba en el último guardado. Si es un archivo nuevo, se borrará.`)) return;
+      return busy(btn, async () => {
+        renderLocalBox(await call('discardFile', r.localPath, btn.dataset.file));
+        toast('Cambios deshechos');
+        loadPending();
+      });
+    case 'discard-all':
+      if (!confirm('¿Deshacer TODOS tus cambios sin subir?\n\nTodos los archivos volverán a como estaban en el último guardado y los archivos nuevos se borrarán. No se puede recuperar.')) return;
+      return busy(btn, async () => {
+        renderLocalBox(await call('discardAll', r.localPath));
+        toast('Todos los cambios deshechos');
+        loadPending();
+      });
+    case 'close-issue':
+      return busy(btn, async () => {
+        await call('closeIssue', pageAccount.alias, r.fullName, btn.dataset.number);
+        toast(`«${btn.dataset.title}» marcada como hecha ✓`);
+        await reloadRepoPage();
+      });
+    case 'enable-issues':
+      return busy(btn, async () => {
+        await call('enableIssues', pageAccount.alias, r.fullName);
+        await reloadRepoPage();
+      });
+    case 'archive': {
+      const msg = r.archived
+        ? `¿Desarchivar «${r.name}»? Se podrán volver a subir cambios.`
+        : `¿Archivar «${r.name}»?\n\nQuedará como solo lectura: nadie podrá subir cambios ni añadir tareas. Puedes desarchivarlo cuando quieras.`;
+      if (!confirm(msg)) return;
+      return busy(btn, async () => {
+        await call('setArchived', pageAccount.alias, r.fullName, !r.archived);
+        toast(r.archived ? 'Desarchivado' : 'Archivado 📦');
+        await reloadRepoPage();
+      });
+    }
+    case 'rename':
+      return renameRepo();
+    case 'delete':
+      return deleteRepo();
   }
 });
+
+function renameRepo() {
+  modalBody.innerHTML = `
+    <h2>Cambiar nombre de «${esc(repo.name)}»</h2>
+    <form id="rename-form">
+      <label>Nombre nuevo
+        <small>Sin espacios. Los enlaces antiguos seguirán funcionando.</small>
+        <input name="name" value="${esc(repo.name)}" required pattern="[A-Za-z0-9._-]+" autofocus>
+      </label>
+      ${repo.localPath ? '<p class="muted">También se cambiará en tu ordenador (si la carpeta está abierta en otro programa, se queda con el nombre antiguo).</p>' : ''}
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Cambiar nombre</button>
+      </div>
+    </form>`;
+  $('#rename-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = new FormData(e.target).get('name');
+    if (name === repo.name) return modal.close();
+    await busy(e.submitter, async () => {
+      const res = await call('renameRepo', pageAccount.alias, repo.fullName, name);
+      modal.close();
+      toast(
+        repo.localPath && !res.folderRenamed
+          ? `Ahora se llama «${name}». La carpeta de tu ordenador estaba en uso y conserva el nombre antiguo.`
+          : `Ahora se llama «${name}»`
+      );
+      await reloadRepoPage(res.fullName);
+    });
+  });
+  modal.showModal();
+}
+
+async function deleteRepo() {
+  const r = repo;
+  if (await call('needsDeleteScope', pageAccount.alias).catch(() => false)) {
+    const ok = await codeModal({
+      title: 'Permiso para borrar proyectos',
+      intro: 'Por seguridad, GitHub pide un permiso especial para poder borrar. Solo se pide una vez.',
+      user: pageAccount.githubUser,
+      action: () => call('grantDeleteScope', pageAccount.alias),
+    });
+    if (!ok) return;
+  }
+  modalBody.innerHTML = `
+    <h2>Borrar «${esc(r.name)}»</h2>
+    <div class="result err">Se borrará de GitHub para siempre: el código, los cambios y las tareas. No se puede deshacer.</div>
+    <form id="delete-form">
+      <label>Para confirmar, escribe <b>${esc(r.name)}</b>
+        <input name="confirm" autocomplete="off" autofocus>
+      </label>
+      ${
+        r.localPath
+          ? `<label class="choice"><input type="checkbox" name="trash"> Mover también la carpeta de mi ordenador a la papelera</label>
+             <p class="muted">${esc(r.localPath)}</p>`
+          : ''
+      }
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary danger-fill" type="submit" disabled>Borrar para siempre</button>
+      </div>
+    </form>`;
+  const form = $('#delete-form');
+  const submit = form.querySelector('[type=submit]');
+  form.confirm.addEventListener('input', () => (submit.disabled = form.confirm.value.trim() !== r.name));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await busy(submit, async () => {
+      const res = await call('deleteRepo', pageAccount.alias, r.fullName, !!form.trash?.checked);
+      modal.close();
+      toast(res.trashed ? `«${r.name}» borrado (la carpeta está en la papelera)` : `«${r.name}» borrado de GitHub`);
+      showView('account-page');
+      await reloadRepos();
+      loadPending();
+    });
+  });
+  modal.showModal();
+}
 
 function editDescription() {
   modalBody.innerHTML = `
@@ -864,4 +1061,42 @@ $('#link-repo').addEventListener('click', () => {
   modal.showModal();
 });
 
-loadAccounts().catch((err) => toast(err.message, true));
+/* ---------- Avisos de trabajo pendiente ---------- */
+
+async function loadPending() {
+  const box = $('#pending');
+  try {
+    const items = await call('pendingWork');
+    box.innerHTML = items.length
+      ? `<div class="pending"><b>⚠️ Tienes trabajo pendiente</b><ul class="people">${items
+          .map((p) => {
+            const what = [
+              p.changes && plural(p.changes, 'archivo sin subir', 'archivos sin subir'),
+              p.ahead && plural(p.ahead, 'cambio guardado sin subir', 'cambios guardados sin subir'),
+              p.behind && plural(p.behind, 'cambio nuevo en GitHub', 'cambios nuevos en GitHub'),
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            return `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
+              <div class="muted">${what}</div></span>
+              <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}">Ver</button></li>`;
+          })
+          .join('')}</ul></div>`
+      : '';
+  } catch {
+    box.innerHTML = '';
+  }
+}
+
+$('#pending').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-repo]');
+  if (!btn) return;
+  const acc = accounts.find((a) => a.alias === btn.dataset.alias);
+  if (!acc?.apiAccess) return toast('Primero pulsa «Ver mis proyectos» en esa cuenta para darle acceso', true);
+  openAccountPage(acc);
+  openRepoPage(btn.dataset.repo);
+});
+
+loadAccounts()
+  .then(loadPending)
+  .catch((err) => toast(err.message, true));

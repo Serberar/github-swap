@@ -9,6 +9,9 @@ const { Store } = require('./lib/store');
 let win;
 let store;
 
+// Misma carpeta de datos con `npm start` y con la app instalada (que se llama "GitHub Swap").
+app.setPath('userData', path.join(app.getPath('appData'), 'github-swap'));
+
 function defaultLabel(alias) {
   if (alias === 'github.com') return 'Principal';
   const base = alias.replace(/^github[-_.]?/i, '') || alias;
@@ -162,6 +165,109 @@ const handlers = {
 
   async openInEditor(dir) {
     await shell.openExternal('vscode://file/' + encodeURI(dir.replace(/\\/g, '/')));
+  },
+
+  async pendingWork() {
+    const aliases = new Set(ssh.parseHosts().map((h) => h.alias));
+    const dirs = new Map();
+    for (const r of store.data.localScan?.repos || []) dirs.set(r.path.toLowerCase(), r.path);
+    for (const meta of Object.values(store.data.accounts)) {
+      for (const f of meta.folders) {
+        try {
+          for (const e of fs.readdirSync(f, { withFileTypes: true })) {
+            const dir = path.join(f, e.name);
+            if (e.isDirectory() && fs.existsSync(path.join(dir, '.git'))) dirs.set(dir.toLowerCase(), dir);
+          }
+        } catch {
+          // carpeta borrada o sin permisos
+        }
+      }
+    }
+    return git.pendingWork([...dirs.values()], (alias) => aliases.has(alias));
+  },
+
+  async discardFile(dir, file) {
+    await git.discardFile(dir, file);
+    return git.localStatus(dir, { fetch: false });
+  },
+
+  async discardAll(dir) {
+    await git.discardAll(dir);
+    return git.localStatus(dir, { fetch: false });
+  },
+
+  async createIssue(alias, fullName, data) {
+    if (!String(data?.title || '').trim()) throw new Error('Escribe la tarea');
+    await github.createIssue(readyAccount(alias).githubUser, fullName, data);
+  },
+
+  async closeIssue(alias, fullName, number) {
+    await github.closeIssue(readyAccount(alias).githubUser, fullName, number);
+  },
+
+  async enableIssues(alias, fullName) {
+    await github.updateRepo(readyAccount(alias).githubUser, fullName, { has_issues: true });
+  },
+
+  async setArchived(alias, fullName, archived) {
+    await github.updateRepo(readyAccount(alias).githubUser, fullName, { archived: !!archived });
+  },
+
+  async renameRepo(alias, fullName, newName) {
+    const meta = readyAccount(alias);
+    if (!/^[\w.-]+$/.test(newName || '')) throw new Error('El nombre solo puede tener letras, números, «-», «_» y «.» (sin espacios)');
+    const r = await github.updateRepo(meta.githubUser, fullName, { name: newName });
+    const oldName = fullName.split('/')[1];
+    let localPath = localCopy(meta, oldName, fullName);
+    let folderRenamed = false;
+    if (localPath) {
+      await git.setOrigin(localPath, `git@${alias}:${r.full_name}.git`);
+      // La carpeta se renombra solo si se llamaba igual que el repo; si está abierta en otro programa, se deja.
+      if (path.basename(localPath) === oldName) {
+        const target = path.join(path.dirname(localPath), newName);
+        try {
+          if (!fs.existsSync(target)) {
+            fs.renameSync(localPath, target);
+            localPath = target;
+            folderRenamed = true;
+          }
+        } catch {
+          // en uso: se queda con el nombre antiguo
+        }
+      }
+      const scan = store.data.localScan;
+      if (scan) {
+        const info = await git.repoInfo(localPath);
+        scan.repos = scan.repos.filter((x) => x.fullName?.toLowerCase() !== fullName.toLowerCase()).concat(info);
+        store.save();
+      }
+    }
+    return { fullName: r.full_name, localPath, folderRenamed };
+  },
+
+  async needsDeleteScope(alias) {
+    return !(await github.scopes(readyAccount(alias).githubUser)).includes('delete_repo');
+  },
+
+  async grantDeleteScope(alias) {
+    const meta = readyAccount(alias);
+    await github.addScope(meta.githubUser, 'delete_repo', (code) => win.webContents.send('login-code', code));
+  },
+
+  async deleteRepo(alias, fullName, trashLocal) {
+    const meta = readyAccount(alias);
+    const localPath = localCopy(meta, fullName.split('/')[1], fullName);
+    await github.deleteRepo(meta.githubUser, fullName);
+    let trashed = false;
+    if (trashLocal && localPath) {
+      await shell.trashItem(localPath); // a la papelera, no se borra del todo
+      trashed = true;
+    }
+    if (store.data.localScan && (trashed || !localPath)) {
+      store.data.localScan.repos = store.data.localScan.repos.filter((x) => x.fullName?.toLowerCase() !== fullName.toLowerCase());
+      store.save();
+    }
+    return { trashed, localPath };
   },
 
   async downloadRepo(alias, fullName) {
