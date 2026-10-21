@@ -797,23 +797,44 @@ function renderLocalBox(st) {
         <button class="primary" data-act="pull">Traer cambios</button>
       </div>`);
   }
-  if (st.changes.length) {
-    const files = st.changes
+  const modified = st.changes.filter((c) => c.code !== '??');
+  const untracked = st.changes.filter((c) => c.code === '??');
+  if (modified.length) {
+    const files = modified
       .map(
         (c) => `<li><span class="grow"><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</span>
           <button class="link" data-act="discard" data-file="${esc(c.file)}" title="Volver a como estaba">Deshacer</button></li>`
       )
       .join('');
     parts.push(`
-      <div>
-        <b>Has cambiado ${plural(st.changes.length, 'archivo', 'archivos')}</b>
+      <div class="local-group">
+        <b>Has cambiado ${plural(modified.length, 'archivo', 'archivos')}</b>
         <details><summary>Ver cuáles</summary><ul class="files">${files}</ul>
           <button class="link danger" data-act="discard-all">Deshacer todos mis cambios</button></details>
-        <form id="push-form" class="inline-form">
-          <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
-          <button class="primary" type="submit">Guardar y subir</button>
-        </form>
       </div>`);
+  }
+  if (untracked.length) {
+    const files = untracked
+      .map(
+        (c) => `<li><span class="grow">${esc(c.file)}</span>
+          <button class="link" data-act="ignore" data-file="${esc(c.file)}">No subir nunca</button></li>`
+      )
+      .join('');
+    parts.push(`
+      <div class="local-group">
+        <b>${plural(untracked.length, 'archivo nuevo que nunca se ha subido', 'archivos nuevos que nunca se han subido')}</b>
+        <div class="muted">Si son solo tuyos (documentos, pruebas…) y no deben ir a GitHub, márcalos como «No subir nunca».</div>
+        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul>
+          <button class="link" data-act="ignore-all">No subir ninguno de estos</button></details>
+      </div>`);
+  }
+  if (st.changes.length) {
+    parts.push(`
+      <form id="push-form" class="inline-form">
+        <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
+        <button class="primary" type="submit">Guardar y subir</button>
+      </form>
+      ${untracked.length ? '<p class="muted">Al guardar y subir, también se suben los archivos nuevos que no hayas marcado.</p>' : ''}`);
   } else if (st.ahead) {
     parts.push(`
       <div class="setting">
@@ -900,6 +921,21 @@ $('#repo-body').addEventListener('click', async (e) => {
         toast('Cambios deshechos');
         loadPending();
       });
+    case 'ignore':
+      return busy(btn, async () => {
+        renderLocalBox(await call('ignoreLocal', r.localPath, [btn.dataset.file]));
+        toast('No se subirá nunca (solo en este ordenador)');
+        loadPending();
+      });
+    case 'ignore-all': {
+      const files = [...$('#local-box').querySelectorAll('[data-act="ignore"]')].map((b) => b.dataset.file);
+      if (!confirm(`¿No subir nunca estos ${files.length} archivos nuevos?\n\nSe quedan en tu ordenador y la app dejará de avisarte de ellos. No se borra nada.`)) return;
+      return busy(btn, async () => {
+        renderLocalBox(await call('ignoreLocal', r.localPath, files));
+        toast('Listo: esos archivos no se subirán');
+        loadPending();
+      });
+    }
     case 'discard-all':
       if (!confirm('¿Deshacer TODOS tus cambios sin subir?\n\nTodos los archivos volverán a como estaban en el último guardado y los archivos nuevos se borrarán. No se puede recuperar.')) return;
       return busy(btn, async () => {
@@ -1091,14 +1127,15 @@ async function loadPending() {
       ? `<div class="pending"><b>⚠️ Tienes trabajo pendiente</b><ul class="people">${items
           .map((p) => {
             const what = [
-              p.changes && plural(p.changes, 'archivo sin subir', 'archivos sin subir'),
+              p.modified && plural(p.modified, 'archivo cambiado sin subir', 'archivos cambiados sin subir'),
+              p.untracked && plural(p.untracked, 'archivo nuevo nunca subido', 'archivos nuevos nunca subidos'),
               p.ahead && plural(p.ahead, 'cambio guardado sin subir', 'cambios guardados sin subir'),
               p.behind && plural(p.behind, 'cambio nuevo en GitHub', 'cambios nuevos en GitHub'),
             ]
               .filter(Boolean)
               .join(' · ');
             return `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
-              <div class="muted">${what}</div></span>
+              <div class="muted">${what}</div><div class="muted path">${esc(p.path)}</div></span>
               <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}">Ver</button></li>`;
           })
           .join('')}</ul></div>`
