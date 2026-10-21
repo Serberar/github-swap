@@ -299,8 +299,13 @@ button.danger-fill { background: var(--danger); border-color: var(--danger); col
 
 .commits .title { overflow-wrap: anywhere; }
 
+.local-path { font-size: 12px; word-break: break-all; margin: -6px 0 12px; }
+.group-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; margin-bottom: 4px; }
+.local-group .files { margin: 6px 0 0; }
+.card { scroll-margin-top: 84px; }
+.card.highlight { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .3s; }
 .local-group + .local-group { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-.local-group + .inline-form { margin-top: 12px; }
+.local-group + .inline-form, #push-slot { margin-top: 12px; }
 .pending .path { font-size: 12px; word-break: break-all; }
 
 .repo-layout .setting { flex-wrap: nowrap; }

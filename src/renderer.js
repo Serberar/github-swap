@@ -604,7 +604,12 @@ let repo = null;
 const CHANGE_LABELS = { '?': 'Nuevo', A: 'Nuevo', M: 'Cambiado', D: 'Borrado', R: 'Renombrado' };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-async function openRepoPage(fullName) {
+// opts.path: la copia concreta del ordenador (si hay varias); opts.focus: ir directo a «En tu ordenador».
+let repoOpts = {};
+
+async function openRepoPage(fullName, opts = {}) {
+  repoOpts = opts;
+  repo = null;
   $('#repo-body').innerHTML = '<p class="muted">Cargando…</p>';
   showView('repo-page');
   await reloadRepoPage(fullName);
@@ -612,9 +617,16 @@ async function openRepoPage(fullName) {
 
 async function reloadRepoPage(fullName = repo.fullName) {
   try {
-    repo = await call('repoDetails', pageAccount.alias, fullName);
+    repo = await call('repoDetails', pageAccount.alias, fullName, repoOpts.path || repo?.localPath || null);
     renderRepoPage();
-    loadLocal();
+    await loadLocal();
+    if (repoOpts.focus) {
+      repoOpts.focus = false;
+      const card = $('#local-box')?.closest('.card');
+      card?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      card?.classList.add('highlight');
+      setTimeout(() => card?.classList.remove('highlight'), 2500);
+    }
   } catch (err) {
     $('#repo-body').innerHTML = `<div class="result err">${esc(err.message)}</div>`;
   }
@@ -628,11 +640,11 @@ function personRow(p, extra, button) {
 }
 
 // Muestra los primeros `visible` elementos y deja el resto plegado.
-function listWithMore(items, visible, moreLabel) {
-  const head = `<ul class="commits">${items.slice(0, visible).join('')}</ul>`;
+function listWithMore(items, visible, moreLabel, cls = 'commits') {
+  const head = `<ul class="${cls}">${items.slice(0, visible).join('')}</ul>`;
   if (items.length <= visible) return head;
   return `${head}<details class="more"><summary>${moreLabel(items.length - visible)}</summary>
-    <ul class="commits">${items.slice(visible).join('')}</ul></details>`;
+    <ul class="${cls}">${items.slice(visible).join('')}</ul></details>`;
 }
 
 function renderRepoPage() {
@@ -744,7 +756,12 @@ function renderRepoPage() {
     </div>
     <div class="repo-layout">
       <div class="col">
-        ${r.localPath ? `<section class="card"><h3>En tu ordenador</h3><div id="local-box"><p class="muted">Comprobando…</p></div></section>` : ''}
+        ${
+          r.localPath
+            ? `<section class="card"><h3>En tu ordenador</h3><div class="muted path local-path">📁 ${esc(r.localPath)}</div>
+               <div id="local-box"><p class="muted">Comprobando…</p></div></section>`
+            : ''
+        }
         <section class="card"><h3>Tareas ${r.issues.length ? `<span class="badge neutral">${r.issues.length}</span>` : ''}</h3>${tasks}</section>
         <section class="card"><h3>Últimos cambios ${
           r.branch && r.branch !== r.defaultBranch ? `<span class="badge neutral" title="La rama en la que trabajas">rama ${esc(r.branch)}</span>` : ''
@@ -799,42 +816,43 @@ function renderLocalBox(st) {
   }
   const modified = st.changes.filter((c) => c.code !== '??');
   const untracked = st.changes.filter((c) => c.code === '??');
+  const more = (n) => `Ver ${plural(n, 'archivo más', 'archivos más')}`;
   if (modified.length) {
-    const files = modified
-      .map(
-        (c) => `<li><span class="grow"><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</span>
-          <button class="link" data-act="discard" data-file="${esc(c.file)}" title="Volver a como estaba">Deshacer</button></li>`
-      )
-      .join('');
+    const files = modified.map(
+      (c) => `<li><span class="grow"><span class="badge neutral">${CHANGE_LABELS[c.code.charAt(0)] || 'Cambiado'}</span> ${esc(c.file)}</span>
+        <button class="link" data-act="discard" data-file="${esc(c.file)}" title="Volver a como estaba">Deshacer</button></li>`
+    );
     parts.push(`
       <div class="local-group">
-        <b>Has cambiado ${plural(modified.length, 'archivo', 'archivos')}</b>
-        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul>
-          <button class="link danger" data-act="discard-all">Deshacer todos mis cambios</button></details>
+        <div class="group-head"><b>Has cambiado ${plural(modified.length, 'archivo', 'archivos')}</b>
+          <button class="link danger" data-act="discard-all">Deshacer todo</button></div>
+        ${listWithMore(files, 5, more, 'files')}
       </div>`);
   }
   if (untracked.length) {
-    const files = untracked
-      .map(
-        (c) => `<li><span class="grow">${esc(c.file)}</span>
-          <button class="link" data-act="ignore" data-file="${esc(c.file)}">No subir nunca</button></li>`
-      )
-      .join('');
+    const files = untracked.map(
+      (c) => `<li><span class="grow">${esc(c.file)}</span>
+        <button class="link" data-act="ignore" data-file="${esc(c.file)}">No subir nunca</button></li>`
+    );
     parts.push(`
       <div class="local-group">
-        <b>${plural(untracked.length, 'archivo nuevo que nunca se ha subido', 'archivos nuevos que nunca se han subido')}</b>
+        <div class="group-head"><b>${plural(untracked.length, 'archivo nuevo que nunca se ha subido', 'archivos nuevos que nunca se han subido')}</b>
+          <button class="link" data-act="ignore-all">No subir ninguno</button></div>
         <div class="muted">Si son solo tuyos (documentos, pruebas…) y no deben ir a GitHub, márcalos como «No subir nunca».</div>
-        <details><summary>Ver cuáles</summary><ul class="files">${files}</ul>
-          <button class="link" data-act="ignore-all">No subir ninguno de estos</button></details>
+        ${listWithMore(files, 5, more, 'files')}
       </div>`);
   }
-  if (st.changes.length) {
-    parts.push(`
-      <form id="push-form" class="inline-form">
-        <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
-        <button class="primary" type="submit">Guardar y subir</button>
-      </form>
-      ${untracked.length ? '<p class="muted">Al guardar y subir, también se suben los archivos nuevos que no hayas marcado.</p>' : ''}`);
+  const pushForm = `
+    <form id="push-form" class="inline-form">
+      <input name="message" placeholder="¿Qué has cambiado? (ej. arreglo el menú)" required aria-label="Qué has cambiado">
+      <button class="primary" type="submit">Guardar y subir</button>
+    </form>
+    ${untracked.length ? '<p class="muted">Al guardar y subir, también se suben los archivos nuevos que no hayas marcado.</p>' : ''}`;
+  if (modified.length) {
+    parts.push(pushForm);
+  } else if (untracked.length) {
+    // Solo archivos nuevos: no ofrecer «subir» a la primera, para no subir documentos por accidente.
+    parts.push(`<div id="push-slot"><button data-act="show-push">Quiero subir estos archivos a GitHub…</button></div>`);
   } else if (st.ahead) {
     parts.push(`
       <div class="setting">
@@ -843,9 +861,16 @@ function renderLocalBox(st) {
       </div>`);
   }
   box.innerHTML = parts.join('') || '<p><span class="badge ok">✓ Todo al día</span> <span class="muted">Tu ordenador y GitHub tienen lo mismo.</span></p>';
-  $('#push-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    pushChanges(e.submitter, new FormData(e.target).get('message'));
+  const bindPush = () =>
+    $('#push-form')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      pushChanges(e.submitter, new FormData(e.target).get('message'));
+    });
+  bindPush();
+  box.querySelector('[data-act="show-push"]')?.addEventListener('click', () => {
+    $('#push-slot').innerHTML = pushForm;
+    bindPush();
+    $('#push-form input').focus();
   });
 }
 
@@ -1136,7 +1161,7 @@ async function loadPending() {
               .join(' · ');
             return `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
               <div class="muted">${what}</div><div class="muted path">${esc(p.path)}</div></span>
-              <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}">Ver</button></li>`;
+              <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}" data-path="${esc(p.path)}">Ver</button></li>`;
           })
           .join('')}</ul></div>`
       : '';
@@ -1151,7 +1176,7 @@ $('#pending').addEventListener('click', (e) => {
   const acc = accounts.find((a) => a.alias === btn.dataset.alias);
   if (!acc?.apiAccess) return toast('Primero pulsa «Ver mis proyectos» en esa cuenta para darle acceso', true);
   openAccountPage(acc);
-  openRepoPage(btn.dataset.repo);
+  openRepoPage(btn.dataset.repo, { path: btn.dataset.path, focus: true });
 });
 
 loadAccounts()

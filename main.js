@@ -121,9 +121,13 @@ const handlers = {
     };
   },
 
-  async repoDetails(alias, fullName) {
+  // preferredPath: una copia concreta (p. ej. la del aviso), si sigue existiendo.
+  async repoDetails(alias, fullName, preferredPath) {
     const meta = readyAccount(alias);
-    const localPath = localCopy(meta, fullName.split('/')[1], fullName);
+    const localPath =
+      preferredPath && fs.existsSync(path.join(preferredPath, '.git'))
+        ? preferredPath
+        : localCopy(meta, fullName.split('/')[1], fullName);
     const branch = localPath ? await git.currentBranch(localPath) : null;
     return { ...(await github.repoDetails(meta.githubUser, fullName, branch)), localPath };
   },
