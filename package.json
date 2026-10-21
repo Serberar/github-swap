@@ -1,6 +1,6 @@
 {
   "name": "github-swap",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Gestiona varias cuentas de GitHub (claves SSH, identidades y repos) desde una interfaz sencilla",
   "author": "Sergio",
   "main": "main.js",

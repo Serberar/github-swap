@@ -267,7 +267,6 @@ h4 { margin: 16px 0 6px; font-size: 14px; }
 }
 .pending .people { margin: 8px 0 0; }
 
-button.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* Página de un proyecto: cabecera + dos columnas que apilan sus tarjetas (sin huecos). */
 #repo-body > .result { margin: 0 0 16px; }
