@@ -269,7 +269,54 @@ h4 { margin: 16px 0 6px; font-size: 14px; }
 
 button.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
 
-.result + .page-head { margin-top: 16px; }
+/* Página de un proyecto: cabecera + dos columnas que apilan sus tarjetas (sin huecos). */
+#repo-body > .result { margin: 0 0 16px; }
+
+.repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: 12px 0 16px;
+}
+.repo-head h2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 2px; }
+.repo-head .desc { margin: 8px 0 0; }
+
+.repo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+.repo-layout .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (max-width: 760px) {
+  .repo-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.repo-layout .card h3 { display: flex; gap: 8px; align-items: center; }
+.repo-layout .card > :last-child { margin-bottom: 0; }
+
+.commits .title { overflow-wrap: anywhere; }
+
+.repo-layout .setting { flex-wrap: nowrap; }
+.repo-layout .setting > div { flex: 1; min-width: 0; }
+.repo-layout .setting > button { flex: none; white-space: nowrap; }
+.setting + .setting { border-top: 1px solid var(--border); }
+.setting:first-of-type { padding-top: 0; }
+
+details.more { margin-top: 2px; font-size: inherit; color: inherit; }
+details.more summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  padding: 6px 0;
+  list-style: none;
+}
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::before { content: '▸ '; }
+details.more[open] summary::before { content: '▾ '; }
+details.more[open] summary { border-bottom: 1px solid var(--border); }
 
 .setting {
   display: flex;

@@ -627,6 +627,14 @@ function personRow(p, extra, button) {
   return `<li>${pic}<span class="grow">@${esc(p.login)} ${extra}</span>${button}</li>`;
 }
 
+// Muestra los primeros `visible` elementos y deja el resto plegado.
+function listWithMore(items, visible, moreLabel) {
+  const head = `<ul class="commits">${items.slice(0, visible).join('')}</ul>`;
+  if (items.length <= visible) return head;
+  return `${head}<details class="more"><summary>${moreLabel(items.length - visible)}</summary>
+    <ul class="commits">${items.slice(visible).join('')}</ul></details>`;
+}
+
 function renderRepoPage() {
   const r = repo;
   const people = [
@@ -659,28 +667,34 @@ function renderRepoPage() {
       <p class="muted">Le llegará un email de GitHub. Cuando acepte, podrá ver y subir cambios.</p>`
     : `<p class="muted">Solo el dueño (@${esc(r.owner)}) puede cambiar quién tiene acceso.</p>`;
   const commits = r.commits.length
-    ? `<ul class="commits">${r.commits
-        .map(
-          (c) => `<li><div class="grow"><div>${esc(c.message)}</div><div class="muted">${esc(c.author)} · ${esc(ago(c.date))}</div></div>
+    ? listWithMore(
+        r.commits.map(
+          (c) => `<li><div class="grow"><div class="title">${esc(c.message)}</div><div class="muted">${esc(c.author)} · ${esc(ago(c.date))}</div></div>
             <button class="link" data-web="${esc(c.url)}">Ver</button></li>`
-        )
-        .join('')}</ul>`
+        ),
+        3,
+        (n) => `Ver ${plural(n, 'cambio anterior', 'cambios anteriores')}`
+      )
     : '<p class="muted">Todavía no hay cambios.</p>';
 
   const tasks = !r.hasIssues
     ? `<p class="muted">Las tareas están desactivadas en este proyecto.</p>
        ${r.admin ? '<button data-act="enable-issues">Activar tareas</button>' : ''}`
     : `
-      <ul class="commits">${
-        r.issues
-          .map(
-            (i) => `<li><div class="grow"><div>${esc(i.title)}</div>
-              <div class="muted">#${i.number} · ${esc(i.author || '')} · ${esc(ago(i.date))}${i.comments ? ` · 💬 ${i.comments}` : ''}</div></div>
-              <button class="link" data-web="${esc(i.url)}">Ver</button>
-              ${r.archived ? '' : `<button data-act="close-issue" data-number="${i.number}" data-title="${esc(i.title)}">✓ Hecha</button>`}</li>`
-          )
-          .join('') || '<li class="muted">No hay tareas pendientes. 🎉</li>'
-      }</ul>
+      ${
+        r.issues.length
+          ? listWithMore(
+              r.issues.map(
+                (i) => `<li><div class="grow"><div class="title">${esc(i.title)}</div>
+                  <div class="muted">#${i.number} · ${esc(i.author || '')} · ${esc(ago(i.date))}${i.comments ? ` · 💬 ${i.comments}` : ''}</div></div>
+                  <button class="link" data-web="${esc(i.url)}">Ver</button>
+                  ${r.archived ? '' : `<button data-act="close-issue" data-number="${i.number}" data-title="${esc(i.title)}">✓ Hecha</button>`}</li>`
+              ),
+              5,
+              (n) => `Ver ${plural(n, 'tarea más', 'tareas más')}`
+            )
+          : '<p class="muted">No hay tareas pendientes. 🎉</p>'
+      }
       ${
         r.archived
           ? ''
@@ -712,28 +726,34 @@ function renderRepoPage() {
 
   $('#repo-body').innerHTML = `
     ${r.archived ? '<div class="result err">📦 Este proyecto está archivado: se puede ver y descargar, pero no se pueden subir cambios.</div>' : ''}
-    <div class="page-head">
+    <div class="repo-head card">
       <div class="grow">
-        <h2>${esc(r.name)} <span class="badge neutral">${r.private ? '🔒 Privado' : 'Público'}</span></h2>
+        <h2>${esc(r.name)} <span class="badge neutral">${r.private ? '🔒 Privado' : '🌍 Público'}</span></h2>
         <div class="muted">${esc(r.fullName)}</div>
-        <p>${r.description ? esc(r.description) : '<span class="muted">Sin descripción</span>'}
+        <p class="desc">${r.description ? esc(r.description) : '<span class="muted">Sin descripción</span>'}
           ${r.admin ? '<button class="link" data-act="edit-desc">Editar</button>' : ''}</p>
       </div>
+      <div class="actions">
+        ${
+          r.localPath
+            ? `<button class="primary" data-act="open-code">Abrir en VS Code</button><button data-act="open-folder">Abrir carpeta</button>`
+            : `<button class="primary" data-act="download">Descargar a mi ordenador</button>`
+        }
+        <button data-web="${esc(r.url)}">Ver en GitHub</button>
+      </div>
     </div>
-    <div class="actions spaced">
-      ${
-        r.localPath
-          ? `<button class="primary" data-act="open-code">Abrir en VS Code</button><button data-act="open-folder">Abrir carpeta</button>`
-          : `<button class="primary" data-act="download">Descargar a mi ordenador</button>`
-      }
-      <button class="link" data-web="${esc(r.url)}">Ver en GitHub</button>
-    </div>
-    <div class="cards wide">
-      ${r.localPath ? `<section class="card"><h3>En tu ordenador</h3><div id="local-box"><p class="muted">Comprobando…</p></div></section>` : ''}
-      <section class="card"><h3>Quién tiene acceso</h3>${access}</section>
-      <section class="card"><h3>Tareas ${r.issues.length ? `<span class="badge neutral">${r.issues.length}</span>` : ''}</h3>${tasks}</section>
-      <section class="card"><h3>Últimos cambios</h3>${commits}</section>
-      ${options}
+    <div class="repo-layout">
+      <div class="col">
+        ${r.localPath ? `<section class="card"><h3>En tu ordenador</h3><div id="local-box"><p class="muted">Comprobando…</p></div></section>` : ''}
+        <section class="card"><h3>Tareas ${r.issues.length ? `<span class="badge neutral">${r.issues.length}</span>` : ''}</h3>${tasks}</section>
+        <section class="card"><h3>Últimos cambios ${
+          r.branch && r.branch !== r.defaultBranch ? `<span class="badge neutral" title="La rama en la que trabajas">rama ${esc(r.branch)}</span>` : ''
+        }</h3>${commits}</section>
+      </div>
+      <div class="col">
+        <section class="card"><h3>Quién tiene acceso</h3>${access}</section>
+        ${options}
+      </div>
     </div>`;
   $('#issue-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
