@@ -1,0 +1,630 @@
+const $ = (sel) => document.querySelector(sel);
+const modal = $('#modal');
+const modalBody = $('#modal-body');
+
+let accounts = [];
+let globalIdentity = {};
+let hasGh = true;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+async function call(name, ...args) {
+  const r = await window.api.call(name, ...args);
+  if (!r.ok) throw new Error(r.error);
+  return r.data;
+}
+
+let toastTimer;
+function toast(msg, isError = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'show' + (isError ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = ''), isError ? 6000 : 3000);
+}
+
+// Deshabilita el botón mientras corre la acción y muestra los errores en un aviso.
+async function busy(btn, fn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Un momento…';
+  try {
+    return await fn();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function labelFor(alias) {
+  return accounts.find((a) => a.alias === alias)?.label;
+}
+
+/* ---------- Pestañas ---------- */
+
+function showView(id) {
+  document.querySelectorAll('.tab, .view').forEach((el) => el.classList.remove('active'));
+  document.querySelector(`.tab[data-tab="${id}"]`)?.classList.add('active');
+  $('#' + id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll('.tab').forEach((tab) =>
+  tab.addEventListener('click', () => {
+    showView(tab.dataset.tab);
+    if (tab.dataset.tab === 'projects') loadProjects(false);
+  })
+);
+
+/* ---------- Cuentas ---------- */
+
+async function loadAccounts() {
+  const data = await call('listAccounts');
+  accounts = data.accounts;
+  globalIdentity = data.global;
+  hasGh = data.hasGh;
+  renderAccounts();
+}
+
+function avatar(a) {
+  return a.githubUser
+    ? `<img class="avatar" src="https://github.com/${esc(a.githubUser)}.png?size=96" alt="">`
+    : `<div class="avatar">${esc(a.label.charAt(0).toUpperCase())}</div>`;
+}
+
+function renderAccounts() {
+  const list = $('#account-list');
+  if (!accounts.length) {
+    list.innerHTML = `<div class="card"><h3>Aún no hay cuentas</h3><p class="muted">Pulsa «Añadir cuenta» y te guiamos paso a paso.</p></div>`;
+    return;
+  }
+  list.innerHTML = accounts
+    .map((a) => {
+      const isDefault = a.email && a.email === globalIdentity.email;
+      const status = a.githubUser
+        ? `<span class="badge ok">✓ Conectada como @${esc(a.githubUser)}</span>`
+        : a.hasKey
+          ? `<span class="badge warn">Sin comprobar</span>`
+          : `<span class="badge warn">Falta la llave</span>`;
+      const folders = a.folders.length
+        ? `<ul class="folders">${a.folders
+            .map((f) => `<li><span>📁 ${esc(f)}</span><button class="link" data-act="rm-folder" data-folder="${esc(f)}" title="Quitar">✕</button></li>`)
+            .join('')}</ul>`
+        : `<p class="muted">Ninguna carpeta asignada todavía.</p>`;
+      return `
+      <article class="card" data-alias="${esc(a.alias)}">
+        <div class="card-head">
+          ${avatar(a)}
+          <div>
+            <h3>${esc(a.label)} ${isDefault ? '<span class="badge neutral">Por defecto</span>' : ''}</h3>
+            <div class="muted">${esc(a.name || 'Sin nombre')} · ${esc(a.email || 'sin email')}</div>
+          </div>
+        </div>
+        <p class="status">${status}</p>
+        ${
+          !a.githubUser
+            ? `<p><button class="primary" data-act="finish">Terminar configuración</button></p>`
+            : hasGh
+              ? `<p><button class="primary" data-act="${a.apiAccess ? 'projects' : 'grant'}">📂 Ver mis proyectos</button></p>`
+              : `<p class="muted">Instala GitHub CLI (cli.github.com) para ver y crear proyectos desde aquí.</p>`
+        }
+        <div class="muted">Carpetas que usan esta cuenta automáticamente:</div>
+        ${folders}
+        <div class="actions">
+          <button data-act="add-folder">+ Carpeta</button>
+          <button data-act="test">Comprobar</button>
+          <button data-act="edit">Editar</button>
+          ${isDefault ? '' : `<button data-act="default">Usar por defecto</button>`}
+          ${a.managed ? `<button class="danger" data-act="remove">Quitar</button>` : ''}
+        </div>
+        <details>
+          <summary>Detalles técnicos</summary>
+          Host SSH: <code>${esc(a.alias)}</code><br>
+          Llave: <code>${esc(a.keyFile || '—')}</code>
+        </details>
+      </article>`;
+    })
+    .join('');
+}
+
+$('#account-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const alias = btn.closest('[data-alias]').dataset.alias;
+  const acc = accounts.find((a) => a.alias === alias);
+  switch (btn.dataset.act) {
+    case 'finish':
+      return wizard(acc, 2);
+    case 'projects':
+      return openAccountPage(acc);
+    case 'grant':
+      return grantAccess(acc);
+    case 'edit':
+      return editAccount(acc);
+    case 'test':
+      return busy(btn, async () => {
+        const r = await call('testAccount', alias);
+        toast(r.ok ? `Funciona: conectada como @${r.user}` : 'No conecta. Revisa que la llave esté añadida en GitHub.', !r.ok);
+        await loadAccounts();
+      });
+    case 'add-folder':
+      return busy(btn, async () => {
+        const f = await call('addFolder', alias);
+        if (f) {
+          toast('Listo: los proyectos de esa carpeta usarán esta cuenta');
+          await loadAccounts();
+        }
+      });
+    case 'rm-folder':
+      return busy(btn, async () => {
+        await call('removeFolder', alias, btn.dataset.folder);
+        await loadAccounts();
+      });
+    case 'default':
+      return busy(btn, async () => {
+        await call('makeDefault', alias);
+        toast(`«${acc.label}» es ahora la cuenta por defecto`);
+        await loadAccounts();
+      });
+    case 'remove':
+      if (!confirm(`¿Quitar la cuenta «${acc.label}»?\n\nLa llave se queda guardada en tu ordenador por si la necesitas.`)) return;
+      return busy(btn, async () => {
+        await call('removeAccount', alias);
+        await loadAccounts();
+      });
+  }
+});
+
+/* ---------- Asistente para añadir cuenta ---------- */
+
+$('#add-account').addEventListener('click', () => wizard(null, 1));
+
+function steps(n) {
+  return `<div class="steps">${[1, 2, 3].map((i) => `<span class="${i <= n ? 'done' : ''}"></span>`).join('')}</div>`;
+}
+
+function wizard(acc, step) {
+  if (step === 1) {
+    modalBody.innerHTML = `
+      ${steps(1)}
+      <h2>Nueva cuenta</h2>
+      <form id="wiz-form">
+        <label>¿Cómo quieres llamarla?
+          <small>Solo para ti. Por ejemplo: Trabajo, Personal, Clientes…</small>
+          <input name="label" required autofocus>
+        </label>
+        <label>Tu nombre
+          <small>Aparecerá en los cambios que subas.</small>
+          <input name="name" required>
+        </label>
+        <label>Email de esa cuenta de GitHub
+          <input name="email" type="email" required>
+        </label>
+        <div class="modal-actions">
+          <button type="button" data-close>Cancelar</button>
+          <button class="primary" type="submit">Siguiente</button>
+        </div>
+      </form>`;
+    $('#wiz-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      await busy(e.submitter, async () => {
+        const created = await call('createAccount', data);
+        await loadAccounts();
+        wizard(created, 2);
+      });
+    });
+  }
+
+  if (step === 2) {
+    modalBody.innerHTML = `
+      ${steps(2)}
+      <h2>Conecta «${esc(acc.label)}» con GitHub</h2>
+      <p>Hemos creado una <b>llave</b> para esta cuenta. Ahora hay que dársela a GitHub:</p>
+      <ol class="howto">
+        <li>Abre tu navegador con la sesión de <b>esta</b> cuenta de GitHub iniciada (no la otra).</li>
+        <li>Pulsa el botón azul: copiamos la llave y abrimos la página de GitHub.</li>
+        <li>En «Title» pon lo que quieras (ej. «Mi PC»), pega la llave en «Key» con <b>Ctrl+V</b> y pulsa <b>Add SSH key</b>.</li>
+      </ol>
+      <p><button class="primary" id="copy-open">Copiar llave y abrir GitHub</button></p>
+      <div class="modal-actions">
+        <button type="button" data-close>Más tarde</button>
+        <button class="primary" id="next">Ya lo he hecho →</button>
+      </div>`;
+    $('#copy-open').addEventListener('click', (e) =>
+      busy(e.target, async () => {
+        await call('copyKeyAndOpenGitHub', acc.alias);
+        toast('Llave copiada. Pégala en GitHub con Ctrl+V');
+      })
+    );
+    $('#next').addEventListener('click', () => wizard(acc, 3));
+  }
+
+  if (step === 3) {
+    modalBody.innerHTML = `
+      ${steps(3)}
+      <h2>Comprobando…</h2>
+      <div id="check" class="result">Hablando con GitHub…</div>
+      <div class="modal-actions" id="check-actions"></div>`;
+    call('testAccount', acc.alias)
+      .then(async (r) => {
+        await loadAccounts();
+        const box = $('#check');
+        const actions = $('#check-actions');
+        if (r.ok) {
+          modalBody.querySelector('h2').textContent = '¡Listo!';
+          box.className = 'result ok';
+          box.textContent = `«${acc.label}» está conectada como @${r.user}. Ya puedes usarla.`;
+          actions.innerHTML = `<button class="primary" data-close>Terminar</button>`;
+        } else {
+          modalBody.querySelector('h2').textContent = 'Todavía no funciona';
+          box.className = 'result err';
+          box.textContent = 'GitHub aún no reconoce la llave. ¿La pegaste en la cuenta correcta y pulsaste «Add SSH key»?';
+          actions.innerHTML = `<button id="back">← Volver al paso anterior</button><button class="primary" id="retry">Reintentar</button>`;
+          $('#back').addEventListener('click', () => wizard(acc, 2));
+          $('#retry').addEventListener('click', () => wizard(acc, 3));
+        }
+      })
+      .catch((err) => toast(err.message, true));
+  }
+
+  if (!modal.open) modal.showModal();
+}
+
+function editAccount(acc) {
+  modalBody.innerHTML = `
+    <h2>Editar «${esc(acc.label)}»</h2>
+    <form id="edit-form">
+      <label>Nombre de la cuenta <input name="label" value="${esc(acc.label)}" required></label>
+      <label>Tu nombre <small>Aparecerá en los cambios que subas.</small><input name="name" value="${esc(acc.name)}" required></label>
+      <label>Email <input name="email" type="email" value="${esc(acc.email)}" required></label>
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Guardar</button>
+      </div>
+    </form>`;
+  $('#edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await busy(e.submitter, async () => {
+      await call('updateAccount', acc.alias, Object.fromEntries(new FormData(e.target)));
+      modal.close();
+      await loadAccounts();
+      toast('Guardado');
+    });
+  });
+  modal.showModal();
+}
+
+modal.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]')) modal.close();
+});
+
+/* ---------- Acceso a los proyectos (login de gh) ---------- */
+
+let grantPending = false;
+
+modal.addEventListener('close', () => {
+  if (grantPending) call('cancelAccess');
+});
+
+window.api.onLoginCode((code) => {
+  const box = $('#login-code');
+  if (!box) return;
+  box.textContent = code;
+  $('#open-device').disabled = false;
+});
+
+function grantAccess(acc) {
+  modalBody.innerHTML = `
+    <h2>Ver los proyectos de «${esc(acc.label)}»</h2>
+    <p>Solo hay que hacerlo una vez. GitHub te pedirá permiso para que esta app vea y cree tus proyectos.</p>
+    <ol class="howto">
+      <li>Comprueba que en el navegador has entrado como <b>@${esc(acc.githubUser)}</b>.</li>
+      <li>Pulsa el botón, pega el código en GitHub y acepta.</li>
+    </ol>
+    <div class="code" id="login-code">· · · · – · · · ·</div>
+    <p><button class="primary" id="open-device" disabled>Copiar código y abrir GitHub</button></p>
+    <p class="muted" id="login-status">Esperando a que aceptes en GitHub…</p>
+    <div class="modal-actions"><button type="button" data-close>Cancelar</button></div>`;
+  $('#open-device').addEventListener('click', async () => {
+    await navigator.clipboard.writeText($('#login-code').textContent).catch(() => {});
+    call('openOnGitHub', 'https://github.com/login/device');
+  });
+  modal.showModal();
+
+  grantPending = true;
+  call('grantAccess', acc.alias)
+    .then(async () => {
+      grantPending = false;
+      modal.close();
+      toast('¡Listo! Ya puedes ver tus proyectos');
+      await loadAccounts();
+      openAccountPage(accounts.find((a) => a.alias === acc.alias));
+    })
+    .catch((err) => {
+      if (!grantPending) return; // cancelado por el usuario
+      grantPending = false;
+      const status = $('#login-status');
+      if (status) {
+        status.className = 'result err';
+        status.textContent = err.message;
+      }
+    });
+}
+
+/* ---------- Proyectos de una cuenta ---------- */
+
+let pageAccount = null;
+let pageRepos = [];
+
+const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
+function ago(iso) {
+  const sec = (new Date(iso) - Date.now()) / 1000;
+  const units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+  for (const [unit, s] of units) if (Math.abs(sec) >= s) return rtf.format(Math.round(sec / s), unit);
+  return 'ahora mismo';
+}
+
+async function openAccountPage(acc) {
+  pageAccount = acc;
+  pageRepos = [];
+  $('#repo-search').value = '';
+  $('#page-head').innerHTML = `
+    ${avatar(acc)}
+    <div>
+      <h2>Proyectos de «${esc(acc.label)}»</h2>
+      <div class="muted" id="page-folder">@${esc(acc.githubUser)}</div>
+    </div>`;
+  $('#repo-list').innerHTML = '<p class="muted">Cargando proyectos…</p>';
+  showView('account-page');
+  await reloadRepos();
+}
+
+async function reloadRepos() {
+  try {
+    const res = await call('accountRepos', pageAccount.alias);
+    pageRepos = res.repos;
+    $('#page-folder').textContent =
+      `@${pageAccount.githubUser} · ` +
+      (res.folder ? `se guardan en ${res.folder}` : 'la primera vez que descargues te preguntaremos dónde guardarlos');
+    renderRepos();
+  } catch (err) {
+    $('#repo-list').innerHTML = `<div class="result err">${esc(err.message)}</div>`;
+  }
+}
+
+function renderRepos() {
+  const q = $('#repo-search').value.trim().toLowerCase();
+  const list = pageRepos.filter((r) => !q || r.fullName.toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q));
+  if (!list.length) {
+    $('#repo-list').innerHTML = `<p class="muted">${pageRepos.length ? 'Ningún proyecto coincide.' : 'Esta cuenta aún no tiene proyectos. ¡Crea el primero!'}</p>`;
+    return;
+  }
+  $('#repo-list').innerHTML = list
+    .map((r) => {
+      const mine = r.owner.toLowerCase() === pageAccount.githubUser.toLowerCase();
+      return `
+      <div class="row" data-repo="${esc(r.fullName)}">
+        <div class="info">
+          <b>${mine ? '' : esc(r.owner) + ' / '}${esc(r.name)}</b>
+          <span class="badge neutral">${r.private ? '🔒 Privado' : 'Público'}</span>
+          ${r.localPath ? '<span class="badge ok">✓ En tu ordenador</span>' : ''}
+          ${r.description ? `<div class="desc">${esc(r.description)}</div>` : ''}
+          <div class="muted">Último cambio ${esc(ago(r.updatedAt))}</div>
+        </div>
+        <div class="actions">
+          ${
+            r.localPath
+              ? `<button data-local="${esc(r.localPath)}">Abrir carpeta</button>`
+              : `<button class="primary" data-download>Descargar</button>`
+          }
+          <button class="link" data-web="${esc(r.url)}">Ver en GitHub</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+$('#repo-search').addEventListener('input', renderRepos);
+$('#back').addEventListener('click', () => showView('accounts'));
+
+$('#repo-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.dataset.local) return call('openFolder', btn.dataset.local);
+  if (btn.dataset.web) return call('openOnGitHub', btn.dataset.web);
+  if (btn.hasAttribute('data-download')) {
+    const fullName = btn.closest('[data-repo]').dataset.repo;
+    await busy(btn, async () => {
+      const dest = await call('downloadRepo', pageAccount.alias, fullName);
+      if (dest) {
+        toast('Descargado ✓');
+        await loadAccounts();
+        await reloadRepos();
+      }
+    });
+  }
+});
+
+$('#new-repo').addEventListener('click', () => {
+  modalBody.innerHTML = `
+    <h2>Nuevo proyecto en «${esc(pageAccount.label)}»</h2>
+    <form id="new-form">
+      <label>Nombre
+        <small>Sin espacios. Ejemplo: mi-web</small>
+        <input name="name" required pattern="[A-Za-z0-9._-]+" autofocus>
+      </label>
+      <label>Descripción <small>Opcional</small><input name="description"></label>
+      <label>¿Quién puede verlo?</label>
+      <label class="choice"><input type="radio" name="visibility" value="private" checked> Solo yo y quien yo invite (privado)</label>
+      <label class="choice"><input type="radio" name="visibility" value="public"> Cualquiera (público)</label>
+      <p class="muted">Lo creamos en GitHub y lo descargamos en tu ordenador, listo para trabajar.</p>
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Crear proyecto</button>
+      </div>
+    </form>`;
+  $('#new-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    await busy(e.submitter, async () => {
+      const repo = await call('createProject', pageAccount.alias, {
+        name: f.name,
+        description: f.description,
+        private: f.visibility === 'private',
+      });
+      if (!repo) return;
+      modal.close();
+      toast(`«${repo.name}» creado y descargado ✓`);
+      await loadAccounts();
+      await reloadRepos();
+    });
+  });
+  modal.showModal();
+});
+
+/* ---------- Proyectos en el ordenador ---------- */
+
+let scanning = false;
+
+window.api.onScanProgress((p) => {
+  $('#scan-status').textContent =
+    p.scanned == null
+      ? `Encontrados ${p.found} proyectos. Revisando con qué cuenta va cada uno…`
+      : `Buscando en tu ordenador… ${p.scanned} carpetas revisadas, ${p.found} proyectos encontrados`;
+});
+
+async function loadProjects(rescan) {
+  if (scanning) return;
+  try {
+    let scan = rescan ? null : await call('localProjects');
+    if (!scan) {
+      scanning = true;
+      $('#rescan').disabled = true;
+      $('#scan-status').textContent = 'Buscando en tu ordenador…';
+      scan = await call('scanComputer');
+    }
+    renderLocal(scan);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    scanning = false;
+    $('#rescan').disabled = false;
+  }
+}
+
+function renderLocal(scan) {
+  const when = new Date(scan.at).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' });
+  $('#scan-status').textContent = `${scan.repos.length} proyectos de GitHub · última búsqueda: ${when}`;
+  const list = $('#project-list');
+  if (!scan.repos.length) {
+    list.innerHTML = '<p class="muted">No hay ningún proyecto de GitHub en tu ordenador todavía.</p>';
+    return;
+  }
+  const groups = new Map();
+  for (const r of scan.repos) {
+    const key = accounts.some((a) => a.alias === r.alias) ? r.alias : r.alias === 'https' ? 'https' : 'unknown';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const order = [...accounts.map((a) => a.alias), 'https', 'unknown'].filter((k) => groups.has(k));
+  const options = accounts.map((a) => `<option value="${esc(a.alias)}">${esc(a.label)}</option>`).join('');
+  list.innerHTML = order
+    .map((key) => {
+      const acc = accounts.find((a) => a.alias === key);
+      const title = acc
+        ? `${esc(acc.label)} ${acc.githubUser ? `<span class="muted">@${esc(acc.githubUser)}</span>` : ''}`
+        : key === 'https'
+          ? '⚠️ Sin cuenta asignada <span class="muted">elige una para que no te pida contraseñas</span>'
+          : '⚠️ Cuenta desconocida';
+      const rows = groups
+        .get(key)
+        .map(
+          (r) => `
+        <div class="row" data-path="${esc(r.path)}">
+          <div class="info">
+            <b>${esc(r.name)}</b> <span class="muted">${esc(r.fullName)}</span>
+            <div class="muted">${esc(r.path)}${r.email ? ` · firma como ${esc(r.email)}` : ''}</div>
+          </div>
+          <div class="actions">
+            <select aria-label="Cambiar cuenta"><option value="">${acc ? 'Cambiar a…' : 'Asignar cuenta…'}</option>${options}</select>
+            <button data-open>Abrir carpeta</button>
+          </div>
+        </div>`
+        )
+        .join('');
+      return `<div class="group"><h3>${title}</h3><div class="rows">${rows}</div></div>`;
+    })
+    .join('');
+}
+
+$('#rescan').addEventListener('click', () => loadProjects(true));
+
+$('#project-list').addEventListener('change', async (e) => {
+  const sel = e.target;
+  if (sel.tagName !== 'SELECT' || !sel.value) return;
+  const dir = sel.closest('[data-path]').dataset.path;
+  sel.disabled = true;
+  try {
+    await call('assignProject', dir, sel.value);
+    toast(`Ahora usa la cuenta «${labelFor(sel.value)}»`);
+    renderLocal(await call('localProjects'));
+  } catch (err) {
+    toast(err.message, true);
+    sel.disabled = false;
+    sel.value = '';
+  }
+});
+
+$('#project-list').addEventListener('click', (e) => {
+  if (e.target.matches('[data-open]')) call('openFolder', e.target.closest('[data-path]').dataset.path);
+});
+
+/* ---------- Descargar con un enlace ---------- */
+
+$('#link-repo').addEventListener('click', () => {
+  modalBody.innerHTML = `
+    <h2>Descargar con un enlace</h2>
+    <form id="link-form">
+      <label>Enlace del proyecto
+        <small>El que te han pasado, o el que ves en la barra del navegador.</small>
+        <input name="url" placeholder="https://github.com/usuario/proyecto" required autofocus>
+      </label>
+      <p class="muted">Se descargará con la cuenta «${esc(pageAccount.label)}».</p>
+      <div id="link-result"></div>
+      <div class="modal-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Descargar</button>
+      </div>
+    </form>`;
+  $('#link-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('#link-result');
+    out.innerHTML = '';
+    const btn = e.submitter;
+    btn.disabled = true;
+    btn.textContent = 'Descargando…';
+    try {
+      const dest = await call('cloneProject', new FormData(e.target).get('url'), pageAccount.alias);
+      if (dest) {
+        modal.close();
+        toast('Descargado ✓');
+        call('openFolder', dest);
+        await loadAccounts();
+        await reloadRepos();
+      }
+    } catch (err) {
+      out.innerHTML = `<div class="result err">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Descargar';
+    }
+  });
+  modal.showModal();
+});
+
+loadAccounts().catch((err) => toast(err.message, true));

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: https://github.com https://avatars.githubusercontent.com; style-src 'self'">
+  <title>GitHub Swap</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>GitHub Swap</h1>
+    <nav>
+      <button class="tab active" data-tab="accounts">Mis cuentas</button>
+      <button class="tab" data-tab="projects">En mi ordenador</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="accounts" class="view active">
+      <div class="intro">
+        <p>Aquí están tus cuentas de GitHub. Cada una tiene su propia <b>llave</b>, así que puedes usar varias a la vez sin cerrar sesión.</p>
+        <button class="primary" id="add-account">+ Añadir cuenta</button>
+      </div>
+      <div id="account-list" class="cards"></div>
+    </section>
+
+    <section id="account-page" class="view">
+      <button class="link" id="back">← Volver a mis cuentas</button>
+      <div class="page-head" id="page-head"></div>
+      <div class="toolbar">
+        <input id="repo-search" type="search" placeholder="Buscar proyecto…" aria-label="Buscar proyecto">
+        <button id="link-repo">Descargar con un enlace</button>
+        <button class="primary" id="new-repo">+ Nuevo proyecto</button>
+      </div>
+      <div id="repo-list" class="rows"></div>
+    </section>
+
+    <section id="projects" class="view">
+      <div class="intro">
+        <p>Todos los proyectos de GitHub que hay en tu ordenador y con qué cuenta trabaja cada uno.</p>
+        <button id="rescan">Buscar de nuevo</button>
+      </div>
+      <p class="muted" id="scan-status"></p>
+      <div id="project-list"></div>
+    </section>
+  </main>
+
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+  <div id="toast" role="status"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
