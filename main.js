@@ -255,31 +255,6 @@ const handlers = {
     return { fullName: r.full_name, localPath, folderRenamed };
   },
 
-  async needsDeleteScope(alias) {
-    return !(await github.scopes(readyAccount(alias).githubUser)).includes('delete_repo');
-  },
-
-  async grantDeleteScope(alias) {
-    const meta = readyAccount(alias);
-    await github.addScope(meta.githubUser, 'delete_repo', (code) => win.webContents.send('login-code', code));
-  },
-
-  async deleteRepo(alias, fullName, trashLocal) {
-    const meta = readyAccount(alias);
-    const localPath = localCopy(meta, fullName.split('/')[1], fullName);
-    await github.deleteRepo(meta.githubUser, fullName);
-    let trashed = false;
-    if (trashLocal && localPath) {
-      await shell.trashItem(localPath); // a la papelera, no se borra del todo
-      trashed = true;
-    }
-    if (store.data.localScan && (trashed || !localPath)) {
-      store.data.localScan.repos = store.data.localScan.repos.filter((x) => x.fullName?.toLowerCase() !== fullName.toLowerCase());
-      store.save();
-    }
-    return { trashed, localPath };
-  },
-
   async downloadRepo(alias, fullName) {
     const meta = readyAccount(alias);
     const parent = await accountFolder(alias);

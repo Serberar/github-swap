@@ -729,10 +729,6 @@ function renderRepoPage() {
           <div class="muted">${r.archived ? 'Vuelve a permitir cambios.' : 'Queda guardado como solo lectura. Se puede deshacer.'}</div></div>
           <button data-act="archive">${r.archived ? 'Desarchivar' : 'Archivar'}</button>
         </div>
-        <div class="setting">
-          <div><b>Borrar proyecto</b><div class="muted">Se borra de GitHub para siempre.</div></div>
-          <button class="danger" data-act="delete">Borrar…</button>
-        </div>
       </section>`
     : '';
 
@@ -992,8 +988,6 @@ $('#repo-body').addEventListener('click', async (e) => {
     }
     case 'rename':
       return renameRepo();
-    case 'delete':
-      return deleteRepo();
   }
 });
 
@@ -1029,51 +1023,6 @@ function renameRepo() {
   modal.showModal();
 }
 
-async function deleteRepo() {
-  const r = repo;
-  if (await call('needsDeleteScope', pageAccount.alias).catch(() => false)) {
-    const ok = await codeModal({
-      title: 'Permiso para borrar proyectos',
-      intro: 'Por seguridad, GitHub pide un permiso especial para poder borrar. Solo se pide una vez.',
-      user: pageAccount.githubUser,
-      action: () => call('grantDeleteScope', pageAccount.alias),
-    });
-    if (!ok) return;
-  }
-  modalBody.innerHTML = `
-    <h2>Borrar «${esc(r.name)}»</h2>
-    <div class="result err">Se borrará de GitHub para siempre: el código, los cambios y las tareas. No se puede deshacer.</div>
-    <form id="delete-form">
-      <label>Para confirmar, escribe <b>${esc(r.name)}</b>
-        <input name="confirm" autocomplete="off" autofocus>
-      </label>
-      ${
-        r.localPath
-          ? `<label class="choice"><input type="checkbox" name="trash"> Mover también la carpeta de mi ordenador a la papelera</label>
-             <p class="muted">${esc(r.localPath)}</p>`
-          : ''
-      }
-      <div class="modal-actions">
-        <button type="button" data-close>Cancelar</button>
-        <button class="primary danger-fill" type="submit" disabled>Borrar para siempre</button>
-      </div>
-    </form>`;
-  const form = $('#delete-form');
-  const submit = form.querySelector('[type=submit]');
-  form.confirm.addEventListener('input', () => (submit.disabled = form.confirm.value.trim() !== r.name));
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await busy(submit, async () => {
-      const res = await call('deleteRepo', pageAccount.alias, r.fullName, !!form.trash?.checked);
-      modal.close();
-      toast(res.trashed ? `«${r.name}» borrado (la carpeta está en la papelera)` : `«${r.name}» borrado de GitHub`);
-      showView('account-page');
-      await reloadRepos();
-      loadPending();
-    });
-  });
-  modal.showModal();
-}
 
 function editDescription() {
   modalBody.innerHTML = `
