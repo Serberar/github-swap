@@ -948,13 +948,13 @@ function renderLocalBox(st) {
   if (untracked.length) {
     const files = untracked.map(
       (c) => `<li><span class="grow">${esc(c.file)}</span>
-        <button class="link" data-act="ignore" data-file="${esc(c.file)}">No subir nunca</button></li>`
+        <button class="link" data-act="ignore" data-file="${esc(c.file)}" title="No subirlo nunca: se queda solo en tu ordenador">Ignorar</button></li>`
     );
     parts.push(`
       <div class="local-group">
         <div class="group-head"><b>${plural(untracked.length, 'archivo nuevo que nunca se ha subido', 'archivos nuevos que nunca se han subido')}</b>
-          <button class="link" data-act="ignore-all">No subir ninguno</button></div>
-        <div class="muted">Si son solo tuyos (documentos, pruebas…) y no deben ir a GitHub, márcalos como «No subir nunca».</div>
+          <button class="link" data-act="ignore-all" title="No subir ninguno: se quedan solo en tu ordenador">Ignorar todos</button></div>
+        <div class="muted">Si alguno es solo tuyo (pruebas, notas…) y no debe ir a GitHub, pulsa «Ignorar»: se queda en tu ordenador y la app deja de avisarte. No se borra nada.</div>
         ${listWithMore(files, 5, more, 'files')}
       </div>`);
   }
@@ -1070,7 +1070,7 @@ $('#repo-body').addEventListener('click', async (e) => {
       });
     case 'ignore-all': {
       const files = [...$('#local-box').querySelectorAll('[data-act="ignore"]')].map((b) => b.dataset.file);
-      if (!confirm(`¿No subir nunca estos ${files.length} archivos nuevos?\n\nSe quedan en tu ordenador y la app dejará de avisarte de ellos. No se borra nada.`)) return;
+      if (!confirm(`¿Ignorar estos ${files.length} archivos nuevos?\n\nSe quedan en tu ordenador y la app dejará de avisarte de ellos. No se borra nada.`)) return;
       return busy(btn, async () => {
         renderLocalBox(await call('ignoreLocal', r.localPath, files));
         toast('Listo: esos archivos no se subirán');
@@ -1217,25 +1217,38 @@ async function loadPending() {
   const box = $('#pending');
   try {
     const items = await call('pendingWork');
+    const up = items.filter((p) => p.modified || p.untracked || p.ahead);
+    const down = items.filter((p) => p.behind);
+    const refresh = '<button class="refresh" data-refresh>↻ Actualizar</button>';
+    const row = (p, what) => `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
+        <div class="muted">${what}</div></span>
+        <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}" data-path="${esc(p.path)}">Ver</button></li>`;
+    // Títulos de commits: los 3 primeros y «y N más».
+    const commits = (list) =>
+      list.length
+        ? list.slice(0, 3).map((m) => `«${esc(m)}»`).join(', ') + (list.length > 3 ? ` y ${list.length - 3} más` : '')
+        : '';
+    const toUpload = up.map((p) =>
+      row(p, [
+        p.modified && plural(p.modified, 'archivo cambiado sin commit', 'archivos cambiados sin commit'),
+        p.untracked && plural(p.untracked, 'archivo nuevo', 'archivos nuevos'),
+        p.ahead && `${plural(p.ahead, 'commit sin subir', 'commits sin subir')}: ${commits(p.outgoingCommits)}`,
+      ].filter(Boolean).join(' · '))
+    );
+    const toDownload = down.map((p) =>
+      row(p, [
+        plural(p.behind, 'commit', 'commits'),
+        p.incomingFiles && plural(p.incomingFiles, 'archivo', 'archivos'),
+        commits(p.incomingCommits),
+      ].filter(Boolean).join(' · '))
+    );
     box.innerHTML = items.length
       ? `<details class="pending"${localStorage.getItem('pendingOpen') === '1' ? ' open' : ''}>
-          <summary><b>⚠️ Tienes trabajo pendiente</b> <span class="muted">en ${plural(items.length, 'proyecto', 'proyectos')}</span></summary>
-          <ul class="people">${items
-          .map((p) => {
-            const what = [
-              p.modified && plural(p.modified, 'archivo cambiado sin subir', 'archivos cambiados sin subir'),
-              p.untracked && plural(p.untracked, 'archivo nuevo nunca subido', 'archivos nuevos nunca subidos'),
-              p.ahead && plural(p.ahead, 'cambio guardado sin subir', 'cambios guardados sin subir'),
-              p.behind && plural(p.behind, 'cambio nuevo en GitHub', 'cambios nuevos en GitHub'),
-            ]
-              .filter(Boolean)
-              .join(' · ');
-            return `<li><span class="grow"><b>${esc(p.name)}</b> <span class="muted">${esc(labelFor(p.alias) || '')}</span>
-              <div class="muted">${what}</div><div class="muted path" title="${esc(p.path)}">📁 ${esc(shortPath(p.path))}</div></span>
-              <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}" data-path="${esc(p.path)}">Ver</button></li>`;
-          })
-          .join('')}</ul></details>`
-      : '';
+          <summary><span class="grow"><b>⚠️ Trabajo pendiente</b> <span class="muted">en ${plural(items.length, 'proyecto', 'proyectos')}</span></span>${refresh}</summary>
+          ${up.length ? `<h4>⬆️ Pendiente de subir</h4><ul class="people">${toUpload.join('')}</ul>` : ''}
+          ${down.length ? `<h4>⬇️ Pendiente de descargar</h4><ul class="people">${toDownload.join('')}</ul>` : ''}
+        </details>`
+      : `<div class="pending ok"><span class="grow">✓ Todos tus proyectos están al día</span>${refresh}</div>`;
   } catch {
     box.innerHTML = '';
   }
@@ -1245,6 +1258,13 @@ async function loadPending() {
 $('#pending').addEventListener('toggle', (e) => localStorage.setItem('pendingOpen', e.target.open ? '1' : '0'), true);
 
 $('#pending').addEventListener('click', (e) => {
+  const again = e.target.closest('button[data-refresh]');
+  if (again) {
+    e.preventDefault(); // está dentro del <summary>: que no pliegue/despliegue el aviso
+    again.disabled = true;
+    again.textContent = 'Comprobando…';
+    return loadPending();
+  }
   const btn = e.target.closest('button[data-repo]');
   if (!btn) return;
   const acc = accounts.find((a) => a.alias === btn.dataset.alias);
