@@ -1218,7 +1218,9 @@ async function loadPending() {
   try {
     const items = await call('pendingWork');
     box.innerHTML = items.length
-      ? `<div class="pending"><b>⚠️ Tienes trabajo pendiente</b><ul class="people">${items
+      ? `<details class="pending"${localStorage.getItem('pendingOpen') === '1' ? ' open' : ''}>
+          <summary><b>⚠️ Tienes trabajo pendiente</b> <span class="muted">en ${plural(items.length, 'proyecto', 'proyectos')}</span></summary>
+          <ul class="people">${items
           .map((p) => {
             const what = [
               p.modified && plural(p.modified, 'archivo cambiado sin subir', 'archivos cambiados sin subir'),
@@ -1232,12 +1234,15 @@ async function loadPending() {
               <div class="muted">${what}</div><div class="muted path" title="${esc(p.path)}">📁 ${esc(shortPath(p.path))}</div></span>
               <button data-alias="${esc(p.alias)}" data-repo="${esc(p.fullName)}" data-path="${esc(p.path)}">Ver</button></li>`;
           })
-          .join('')}</ul></div>`
+          .join('')}</ul></details>`
       : '';
   } catch {
     box.innerHTML = '';
   }
 }
+
+// 'toggle' no burbujea: se escucha en captura para recordar si el aviso queda abierto.
+$('#pending').addEventListener('toggle', (e) => localStorage.setItem('pendingOpen', e.target.open ? '1' : '0'), true);
 
 $('#pending').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-repo]');
