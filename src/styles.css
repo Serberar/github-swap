@@ -446,7 +446,6 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
   font-weight: 600;
   padding-bottom: 16px;
 }
-.pending.ok > .grow { color: var(--ok); }
 .pending.ok, details.pending summary { display: flex; align-items: center; gap: 12px; }
 .pending .refresh { flex: none; order: 1; font-size: 13px; padding: 4px 12px; font-weight: 500; }
 details.pending { font-size: inherit; color: inherit; margin-top: 0; padding-bottom: 16px; }
