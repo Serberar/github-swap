@@ -436,7 +436,6 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
 .pending {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--warn);
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius);
   padding: 16px 20px 6px;
@@ -445,7 +444,6 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
 .pending .people { margin: 8px 0 0; }
 .pending.ok {
   font-weight: 600;
-  border-left-color: var(--border);
   padding-bottom: 16px;
 }
 .pending.ok > .grow { color: var(--ok); }
