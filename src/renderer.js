@@ -96,7 +96,7 @@ function renderSetup(hasGit) {
 // Aviso si hay una versión nueva publicada en GitHub.
 async function checkUpdate() {
   const version = await call('checkUpdate');
-  if (!version) return;
+  if (!version) return null;
   $('#update').innerHTML = `<div class="pending setup">
       <div class="grow">
         <b>Hay una versión nueva de GitHub Swap (${esc(version)})</b>
@@ -110,7 +110,17 @@ async function checkUpdate() {
       await call('installUpdate');
     })
   );
+  return version;
 }
+
+call('appVersion').then((v) => ($('#version').textContent = `Versión ${v}`)).catch(() => {});
+
+$('#check-update').addEventListener('click', (e) =>
+  busy(e.target, async () => {
+    if (await checkUpdate()) $('#update').scrollIntoView({ behavior: 'smooth' });
+    else toast('Ya tienes la última versión');
+  })
+);
 
 // Rutas más cortas para leer: «C:\Users\X\Desktop\…» → «Escritorio\…».
 function shortPath(p) {

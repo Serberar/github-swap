@@ -105,6 +105,10 @@ const handlers = {
   },
 
   // Solo en la app instalada: con `npm start` no hay nada que actualizar.
+  appVersion() {
+    return app.getVersion();
+  },
+
   async checkUpdate() {
     if (!app.isPackaged) return null;
     update = await updater.check(app.getVersion()).catch(() => null);
