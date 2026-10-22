@@ -434,35 +434,23 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
 .files li { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 0; word-break: break-all; }
 
 .pending {
-  background: var(--warn-bg);
-  border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  box-shadow: var(--shadow-sm);
   border-radius: var(--radius);
   padding: 16px 20px 6px;
   margin-bottom: 24px;
 }
 .pending .people { margin: 8px 0 0; }
 .pending.ok {
-  background: var(--surface);
   font-weight: 600;
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
+  border-left-color: var(--border);
   padding-bottom: 16px;
 }
 .pending.ok > .grow { color: var(--ok); }
 .pending.ok, details.pending summary { display: flex; align-items: center; gap: 12px; }
-.pending .refresh { flex: none; order: 1; }
-/* Botones del aviso: transparentes, del color del propio aviso. */
-.pending button {
-  --tone: var(--warn);
-  font-size: 13px;
-  padding: 4px 12px;
-  background: transparent;
-  color: var(--tone);
-  border-color: color-mix(in srgb, var(--tone) 35%, transparent);
-  box-shadow: none;
-}
-.pending.ok button { --tone: var(--muted); }
-.pending button:hover { background: color-mix(in srgb, var(--tone) 12%, transparent); border-color: var(--tone); }
+.pending .refresh { flex: none; order: 1; font-size: 13px; padding: 4px 12px; font-weight: 500; }
 details.pending { font-size: inherit; color: inherit; margin-top: 0; padding-bottom: 16px; }
 details.pending[open] { padding-bottom: 6px; }
 details.pending summary { cursor: pointer; list-style: none; border-radius: 6px; }
