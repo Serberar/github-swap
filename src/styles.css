@@ -442,12 +442,13 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
 }
 .pending .people { margin: 8px 0 0; }
 .pending.ok {
-  background: var(--ok-bg);
-  color: var(--ok);
+  background: var(--surface);
   font-weight: 600;
-  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
   padding-bottom: 16px;
 }
+.pending.ok > .grow { color: var(--ok); }
 .pending.ok, details.pending summary { display: flex; align-items: center; gap: 12px; }
 .pending .refresh { flex: none; order: 1; }
 /* Botones del aviso: transparentes, del color del propio aviso. */
@@ -460,7 +461,7 @@ h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppe
   border-color: color-mix(in srgb, var(--tone) 35%, transparent);
   box-shadow: none;
 }
-.pending.ok button { --tone: var(--ok); }
+.pending.ok button { --tone: var(--muted); }
 .pending button:hover { background: color-mix(in srgb, var(--tone) 12%, transparent); border-color: var(--tone); }
 details.pending { font-size: inherit; color: inherit; margin-top: 0; padding-bottom: 16px; }
 details.pending[open] { padding-bottom: 6px; }
