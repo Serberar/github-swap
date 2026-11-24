@@ -117,7 +117,7 @@ const handlers = {
 
   async installUpdate() {
     if (!update) throw new Error('No hay ninguna actualización pendiente');
-    await updater.install(update.url);
+    await updater.install(update);
     setTimeout(() => app.quit(), 500);
   },
 

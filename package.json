@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "node scripts/start.js",
+    "test": "node --test test/*.test.js",
     "predist": "node scripts/fetch-gh.js",
     "dist": "electron-builder --win nsis"
   },
