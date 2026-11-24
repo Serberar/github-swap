@@ -8,11 +8,15 @@
     "start": "node scripts/start.js",
     "test": "node --test test/*.test.js",
     "predist": "node scripts/fetch-gh.js",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "lint": "eslint ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "electron": "^45.4.1",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
   },
   "allowScripts": {
     "electron@45.4.1": true
