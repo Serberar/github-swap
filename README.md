@@ -4,6 +4,8 @@
 
 Aplicación de escritorio para Windows que gestiona **varias cuentas de GitHub** desde una interfaz sencilla, sin pelearse con la terminal: claves SSH, identidades de Git y repositorios de cada cuenta.
 
+![Pantalla de cuentas con datos de ejemplo](docs/cuentas.webp)
+
 ## Funcionalidades
 
 - **Varias cuentas** de GitHub, cada una con su clave SSH, su nombre y email de Git y su carpeta de proyectos.
