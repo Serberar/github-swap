@@ -50,6 +50,10 @@ src/           # Interfaz (HTML, CSS y renderer)
 scripts/       # Arranque en desarrollo y descarga de GitHub CLI
 ```
 
+## Licencia
+
+Publicado con licencia [MIT](LICENSE).
+
 ## Autor
 
 Sergio Bernabé
