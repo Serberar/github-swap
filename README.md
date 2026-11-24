@@ -11,6 +11,10 @@ Aplicación de escritorio para Windows que gestiona **varias cuentas de GitHub**
 - **Actualizaciones automáticas:** avisa cuando hay una versión nueva publicada y se actualiza con un botón.
 - Instala sola **Git** y trae **GitHub CLI** incluido.
 
+## Descarga
+
+Descarga el instalador desde [Releases](https://github.com/Serberar/github-swap/releases/latest) y ábrelo. Se instala solo para tu usuario.
+
 ## Tecnologías
 
 Electron, Node.js y JavaScript. Empaquetado con electron-builder (instalador NSIS para Windows).
