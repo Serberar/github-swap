@@ -1,5 +1,7 @@
 # GitHub Swap
 
+**Español** · [English](README.en.md)
+
 [![CI](https://github.com/Serberar/github-swap/actions/workflows/ci.yml/badge.svg)](https://github.com/Serberar/github-swap/actions/workflows/ci.yml) [![Versión](https://img.shields.io/github/v/release/Serberar/github-swap?label=versi%C3%B3n)](https://github.com/Serberar/github-swap/releases/latest)
 
 Aplicación de escritorio para Windows que gestiona **varias cuentas de GitHub** desde una interfaz sencilla, sin pelearse con la terminal: claves SSH, identidades de Git y repositorios de cada cuenta.
