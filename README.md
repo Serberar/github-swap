@@ -41,7 +41,7 @@ npm test
 ## Generar el instalador
 
 ```bash
-npm run dist       # crea el .exe en release/ (NSIS, Windows)
+npm run dist       # crea el instalador en release/ (NSIS, Windows)
 ```
 
 ## Estructura
