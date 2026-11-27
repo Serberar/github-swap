@@ -12,7 +12,7 @@ Desktop app (Electron) to use several GitHub accounts on the same computer witho
 
 ## Run it
 
-Download the installer from [Releases](https://github.com/Serberar/github-swap/releases/latest), or:
+Download the installer from Releases, or:
 
 ```bash
 npm install
